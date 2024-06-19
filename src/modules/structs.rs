@@ -88,7 +88,7 @@ pub struct Function {
 #[derive(Debug)]
 pub struct Declaration {
     pub name: String,
-    pub datatype: DataType,
+    pub datatype: Option<DataType>,
     pub value: Value,
 }
 

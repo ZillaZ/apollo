@@ -181,60 +181,18 @@ impl<'a> NoirParser<'a> {
     fn build_declaration(&self, pairs: &mut Pairs<Rule>) -> Declaration {
         let mut declaration = Declaration {
             name: String::new(),
-            datatype: DataType::Int(4),
+            datatype: None,
             value: Value::Int(0)
         };
         for pair in pairs {
             match pair.as_rule() {
                 Rule::name => declaration.name = self.build_name(pair),
-                Rule::value_decl => self.build_value_decl(&mut pair.into_inner(), &mut declaration),
+                Rule::value => declaration.value = self.build_value(&mut pair.into_inner()),
+                Rule::datatype => declaration.datatype = Some(self.build_datatype(&mut pair.into_inner())),
                 _ => unreachable!()
             }
         }
         declaration
-    }
-
-    fn build_value_decl(&self, pairs: &mut Pairs<Rule>, declaration: &mut Declaration) {
-        let eval = pairs.next().unwrap();
-        match eval.as_rule() {
-            Rule::string_decl => self.build_string_decl(&mut eval.into_inner(), declaration),
-            Rule::int_decl => self.build_int_decl(&mut eval.into_inner(), declaration),
-            Rule::float_decl => self.build_float_decl(&mut eval.into_inner(), declaration),
-            _ => unreachable!()
-        };
-    }
-
-    fn build_string_decl(&self, pairs: &mut Pairs<Rule>, declaration: &mut Declaration) {
-        declaration.datatype = DataType::String;
-        for pair in pairs {
-            println!("{:?}", pair);
-            match pair.as_rule() {
-                Rule::string_type => (),
-                Rule::string_value => declaration.value = Value::String(pair.as_str().into()),
-                Rule::call | Rule::block => declaration.value = self.build_value(&mut pair.into_inner()),
-                _ => unreachable!()
-            };
-        }
-    }
-
-    fn build_int_decl(&self, pairs: &mut Pairs<Rule>, declaration: &mut Declaration) {
-        for pair in pairs {
-            match pair.as_rule() {
-                Rule::int_type => declaration.datatype = self.build_int_type(&mut pair.into_inner()),
-                Rule::math | Rule::integer | Rule::call | Rule::block => declaration.value = self.build_value(&mut pair.into_inner()),
-                _ => unreachable!()
-            };
-        }
-    }
-
-    fn build_float_decl(&self, pairs: &mut Pairs<Rule>, declaration: &mut Declaration) {
-        for pair in pairs.clone() {
-            match pair.as_rule() {
-                Rule::float_type => declaration.datatype = self.build_datatype(pairs),
-                Rule::math | Rule::float | Rule::call | Rule::block => declaration.value = self.build_value(&mut pair.into_inner()),
-                _ => unreachable!()
-            };
-        }
     }
 
     fn build_string_value(&self, pair: Pair<Rule>) -> Value {
@@ -287,7 +245,7 @@ impl<'a> NoirParser<'a> {
         let eval = pairs.peek().unwrap();
         match eval.as_rule() {
             Rule::float_type => self.build_float_type(&mut eval.into_inner()),
-            Rule::int_type => self.build_datatype(pairs),
+            Rule::int_type => self.build_int_type(&mut eval.into_inner()),
             Rule::string_type => DataType::String,
             _ => unreachable!()
         }
