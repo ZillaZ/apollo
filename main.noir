@@ -1,0 +1,5 @@
+fn test() {
+  let one : i8 = 1
+  let two : i8 = 2
+  return one + two
+}
