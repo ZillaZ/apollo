@@ -25,37 +25,25 @@ static char *
 string (int number)
 {
   size_t number_len;
-  char * rev_buffer;
   char * buffer;
   int index;
   int remainder;
-  int logkk;
 
 str_conv:
   number_len = number_len (number);
-  rev_buffer = (char *)malloc (number_len (number));
   buffer = (char *)malloc (number_len (number));
-  index = (int)0;
-  goto rev_build;
-
-rev_build:
-  remainder = number % (int)10 + (int)48;
-  number /= (int)10;
-  rev_buffer[index] = (char)remainder;
-  index += (int)1;
-  if (number > (int)9) goto rev_build; else goto continue_block;
-
-continue_block:
-  rev_buffer[index] = (char)(number + (int)48);
+  index = (int)number_len;
+  index -= (int)1;
   goto build;
 
 build:
-  buffer[((int)number_len - index - (int)1)] = rev_buffer[index];
+  remainder = number % (int)10 + (int)48;
+  number /= (int)10;
+  buffer[index] = (char)remainder;
   index -= (int)1;
-  if (index > (int)-1) goto build; else goto end_block;
+  if (number > (int)0) goto build; else goto end_block;
 
 end_block:
-  logkk = printf (((const char *)buffer));
   return buffer;
 }
 
@@ -63,9 +51,11 @@ extern int
 main ()
 {
   char * str;
+  int _0;
 
 initial:
-  str = string (fib ((int)45));
+  str = string ((int)123);
+  _0 = printf (((const char *)str));
   return (int)0;
 }
 
