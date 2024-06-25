@@ -5,38 +5,48 @@ pub enum Operations {
     Mul,
     Div,
     Neg,
+    Eq,
+    Neq,
+    Lte,
+    Gte,
+    Lt,
+    Gt,
+    And,
+    Or,
+    Not
 }
 
 #[derive(Debug)]
 pub struct UnaryOp {
     pub prefix: Operations,
-    pub value: Box<MathOp>,
+    pub value: Box<Operation>,
 }
 
 #[derive(Debug)]
 pub struct BinaryOp {
-    pub lhs: Box<MathOp>,
+    pub lhs: Box<Operation>,
     pub op: Operations,
-    pub rhs: Box<MathOp>,
+    pub rhs: Box<Operation>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum DataType {
     Float(u8),
     Int(u8),
     UFloat(u8),
     UInt(u8),
     String,
+    Bool
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Arg {
     pub name: String,
     pub datatype: DataType,
 }
 
 #[derive(Debug)]
-pub enum MathOp {
+pub enum Operation {
     Atom(Atom),
     BinaryOp(BinaryOp),
     UnaryOp(UnaryOp),
@@ -56,14 +66,16 @@ pub struct Call {
 
 #[derive(Debug)]
 pub enum Value {
-    Math(Box<MathOp>),
+    Operation(Box<Operation>),
     Call(Call),
     String(String),
     Int(i32),
     Float(f32),
     Block(Box<Block>),
     Name(String),
-    Atom(Box<Atom>)
+    Atom(Box<Atom>),
+    Bool(bool),
+    If(If)
 }
 
 #[derive(Debug)]
@@ -99,10 +111,25 @@ pub struct Atom {
 }
 
 #[derive(Debug)]
+pub enum Otherwise {
+    Block(Block),
+    If(If)
+}
+
+#[derive(Debug)]
+pub struct If {
+    pub not: bool,
+    pub condition: Box<Operation>,
+    pub block: Box<Block>,
+    pub otherwise: Option<Box<Otherwise>>
+}
+
+#[derive(Debug)]
 pub enum Expr {
     Return(Return),
     Call(Call),
     Function(Function),
     Block(Block),
     Declaration(Declaration),
+    If(If)
 }

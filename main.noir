@@ -1,5 +1,9 @@
-fn test() {
-  let one : i8 = 1
-  let two : i8 = 2
-  return one + two
+fn fib(n: i4) -> i4 {
+  if n < 2 {
+    return n
+  }else{
+    return fib(n - 1) + fib(n - 2)
+  }
 }
+let str = string(fib(45))
+return 0

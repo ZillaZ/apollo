@@ -6,8 +6,8 @@ use pest::{
 use crate::{modules::structs::*, Rule};
 
 use super::{
-    gcc::GccContext,
-    structs::{MathOp, Operations, UnaryOp},
+    gcc::{GccContext, Memory},
+    structs::{Operation, Operations, UnaryOp},
 };
 
 pub struct NoirParser<'a> {
@@ -20,7 +20,8 @@ impl<'a> NoirParser<'a> {
         let pratt_parser = PrattParser::new()
             .op(Op::infix(Rule::add, Assoc::Left) | Op::infix(Rule::sub, Assoc::Left))
             .op(Op::infix(Rule::mul, Assoc::Left) | Op::infix(Rule::div, Assoc::Left))
-            .op(Op::prefix(Rule::unary_minus));
+            .op(Op::infix(Rule::and, Assoc::Left) | Op::infix(Rule::or, Assoc::Left) | Op::infix(Rule::neq, Assoc::Left) | Op::infix(Rule::gt, Assoc::Left) | Op::infix(Rule::lt, Assoc::Left) | Op::infix(Rule::gte, Assoc::Left) | Op::infix(Rule::lte, Assoc::Left) | Op::infix(Rule::cmp_eq, Assoc::Left))
+            .op(Op::prefix(Rule::unary_minus) | Op::prefix(Rule::not));
         let context = GccContext::new();
         Self {
             pratt_parser,
@@ -28,12 +29,12 @@ impl<'a> NoirParser<'a> {
         }
     }
 
-    pub fn gen_bytecode(&self, pairs: &mut Pairs<Rule>) {
-        self.context.gen_bytecode(pairs);
+    pub fn gen_bytecode(&self, memory: Memory, ast: &mut Vec<Expr>) {
+        self.context.gen_bytecode(memory, ast);
     }
 
     pub fn gen_ast(&self, pairs: &mut Pairs<Rule>) -> Vec<Expr> {
-        self.build_expression(&mut pairs.next().unwrap().into_inner())
+        self.build_expression(pairs)
     }
 
     fn build_expression(&self, pairs: &mut Pairs<Rule>) -> Vec<Expr> {
@@ -45,18 +46,20 @@ impl<'a> NoirParser<'a> {
                 Rule::function => Expr::Function(self.build_function(&mut pair.into_inner())),
                 Rule::block => Expr::Block(self.build_block(&mut pair.into_inner())),
                 Rule::declaration => Expr::Declaration(self.build_declaration(&mut pair.into_inner())),
-                _ => unreachable!(),
+                Rule::r#if => Expr::If(self.build_if(&mut pair.into_inner())),
+                Rule::EOI => continue,
+                rule => unreachable!("{:?}", rule),
             };
             expressions.push(expr);
         }
         expressions
     }
 
-    fn build_math(&self, pairs: &mut Pairs<Rule>) -> MathOp {
+    fn build_operation(&self, pairs: &mut Pairs<Rule>) -> Operation {
         self.pratt_parser
             .map_primary(|primary| match primary.as_rule() {
-                Rule::atom => MathOp::Atom(self.build_atom(&mut primary.into_inner())),
-                Rule::math => self.build_math(&mut primary.into_inner()),
+                Rule::atom => Operation::Atom(self.build_atom(&mut primary.into_inner())),
+                Rule::operation => self.build_operation(&mut primary.into_inner()),
                 rule => unreachable!("Rule {:?}", rule),
             })
             .map_infix(|lhs, infix, rhs| {
@@ -65,9 +68,17 @@ impl<'a> NoirParser<'a> {
                     Rule::sub => Operations::Sub,
                     Rule::mul => Operations::Mul,
                     Rule::div => Operations::Div,
+                    Rule::and => Operations::And,
+                    Rule::or => Operations::Or,
+                    Rule::lt => Operations::Lt,
+                    Rule::gt => Operations::Gt,
+                    Rule::lte => Operations::Lte,
+                    Rule::gte => Operations::Gte,
+                    Rule::cmp_eq => Operations::Eq,
+                    Rule::neq => Operations::Neq,
                     _ => unreachable!("Infix wtf"),
                 };
-                MathOp::BinaryOp(BinaryOp {
+                Operation::BinaryOp(BinaryOp {
                     lhs: Box::new(lhs),
                     op,
                     rhs: Box::new(rhs),
@@ -76,9 +87,10 @@ impl<'a> NoirParser<'a> {
             .map_prefix(|prefix, value| {
                 let prefix = match prefix.as_rule() {
                     Rule::unary_minus => Operations::Neg,
+                    Rule::not => Operations::Not,
                     rule => unreachable!("Prefix {:?}", rule),
                 };
-                MathOp::UnaryOp(UnaryOp {
+                Operation::UnaryOp(UnaryOp {
                     prefix,
                     value: Box::new(value),
                 })
@@ -95,21 +107,60 @@ impl<'a> NoirParser<'a> {
     fn build_value(&self, pairs: &mut Pairs<Rule>) -> Value {
         let eval = pairs.peek().unwrap();
         match eval.as_rule() {
-            Rule::math => Value::Math(Box::new(self.build_math(&mut eval.into_inner()))),
+            Rule::operation => Value::Operation(Box::new(self.build_operation(&mut eval.into_inner()))),
             Rule::call => Value::Call(self.build_call(&mut eval.into_inner())),
             Rule::block => Value::Block(Box::new(self.build_block(&mut eval.into_inner()))),
             Rule::name => Value::Name(self.build_name(eval)),
             Rule::atom => Value::Atom(Box::new(self.build_atom(&mut eval.into_inner()))),
+            Rule::r#if => Value::If(self.build_if(&mut eval.into_inner())),
             Rule::string_value => self.build_string_value(eval),
             Rule::integer => self.build_integer(eval),
             Rule::float => self.build_float(eval),
-            _ => unreachable!(),
+            Rule::r#bool => self.build_bool(eval),
+            rule => unreachable!("{:?}", rule),
         }
     }
 
+    fn build_if(&self, pairs: &mut Pairs<Rule>) -> If {
+        let mut value = If {
+            not: false,
+            condition: Box::new(Operation::Atom(Atom {
+                  is_neg: false,
+                   value: Value::Int(0)
+               })
+            ),
+            block: Box::new(Block{
+                expr: Vec::new(),
+                box_return: None
+            }),
+            otherwise: None
+        };
+        for pair in pairs {
+            match pair.as_rule() {
+                Rule::not => value.not = true,
+                Rule::operation => value.condition = Box::new(self.build_operation(&mut pair.into_inner())),
+                Rule::block => value.block = Box::new(self.build_block(&mut pair.into_inner())),
+                Rule::otherwise => value.otherwise = Box::new(self.build_otherwise(&mut pair.into_inner())).into(),
+                rule => unreachable!("{:?}", rule)
+            };
+        }
+        value
+    }
+
+    fn build_otherwise(&self, pairs: &mut Pairs<Rule>) -> Otherwise {
+        let eval = pairs.peek().unwrap();
+        return match eval.as_rule() {
+            Rule::r#if => Otherwise::If(self.build_if(&mut eval.into_inner())),
+            Rule::block => Otherwise::Block(self.build_block(&mut eval.into_inner())),
+            rule => unreachable!("{:?}", rule)
+        }
+    }
+
+    fn build_bool(&self, pair: Pair<Rule>) -> Value {
+        Value::Bool(pair.as_str().parse().unwrap())
+    }
+
     fn build_call(&self, pairs: &mut Pairs<Rule>) -> Call {
-        let pair = pairs.next().unwrap();
-        let pairs = pair.into_inner();
         let mut call = Call {
             name: String::new(),
             args: Vec::new()
@@ -117,7 +168,7 @@ impl<'a> NoirParser<'a> {
         for eval in pairs {
             match eval.as_rule() {
                 Rule::name => call.name = self.build_name(eval),
-                Rule::param => call.args = self.build_param(&mut eval.into_inner()),
+                Rule::param => call.args.push(self.build_param(&mut eval.into_inner())),
                 _ => unreachable!()
             }
         }
@@ -138,7 +189,7 @@ impl<'a> NoirParser<'a> {
             match pair.as_rule() {
                 Rule::name => function.name = self.build_name(pair),
                 Rule::args => function.args = self.build_args(&mut pair.into_inner()),
-                Rule::return_type => function.return_type = Some(self.build_datatype(pairs)),
+                Rule::datatype => function.return_type = Some(self.build_datatype(&mut pair.into_inner())),
                 Rule::block => function.block = Box::new(self.build_block(&mut pair.into_inner())),
                 _ => unreachable!()
             }
@@ -166,13 +217,11 @@ impl<'a> NoirParser<'a> {
             expr: Vec::new(),
             box_return: None
         };
-        for pair in pairs {
-            let expressions = self.build_expression(&mut pair.into_inner());
-            for expression in expressions {
-                match expression {
-                    Expr::Return(r#return) => block.box_return = Some(r#return),
-                    val => block.expr.push(Box::new(val))
-                }
+        let expressions = self.build_expression(pairs);
+        for expression in expressions {
+            match expression {
+                Expr::Return(r#return) => block.box_return = Some(r#return),
+                val => block.expr.push(Box::new(val))
             }
         }
         block
@@ -208,36 +257,35 @@ impl<'a> NoirParser<'a> {
     }
 
     fn build_name(&self, pair: Pair<Rule>) -> String {
-        pair.as_str().into()
+        let name = pair.as_str();
+        name.trim().into()
     }
 
-    fn build_param(&self, pairs: &mut Pairs<Rule>) -> Vec<Parameter> {
-        let mut parameters = Vec::new();
-        for pair in pairs {
-            let parameter = match pair.as_rule() {
-                Rule::name => Parameter::Name(self.build_name(pair)),
-                Rule::value => Parameter::Value(self.build_value(&mut pair.into_inner())),
-                _ => unreachable!()
-            };
-            parameters.push(parameter);
+    fn build_param(&self, pairs: &mut Pairs<Rule>) -> Parameter {
+        let pair = pairs.next().unwrap();
+        match pair.as_rule() {
+            Rule::name => Parameter::Name(self.build_name(pair)),
+            Rule::value => Parameter::Value(self.build_value(&mut pair.into_inner())),
+            _ => unreachable!()
         }
-        parameters
     }
 
     fn build_args(&self, pairs: &mut Pairs<Rule>) -> Vec<Arg> {
         let mut args = Vec::new();
+        let mut arg = Arg {
+            name: String::new(),
+            datatype: DataType::Int(4)
+        };
         for pair in pairs {
-            let mut arg = Arg {
-                name: String::new(),
-                datatype: DataType::Int(4)
-            };
             match pair.as_rule() {
-                Rule::v => args.push(arg),
+                Rule::v => args.push(arg.clone()),
                 Rule::name => arg.name = self.build_name(pair),
                 Rule::datatype => arg.datatype = self.build_datatype(&mut pair.into_inner()),
-                _ => unreachable!()
+                rule => unreachable!("{:?}", rule)
             }
         };
+        args.push(arg.clone());
+        println!("args: {:?}", args);
         args
     }
 
