@@ -1,8 +1,8 @@
-fn num_len(num: i4, mul: i4, count: i4) -> i4 {
-  if mul <= num {
-    return num_len(num, mul * 10, count + 1)
-  }
-  return count
+fn str_conv(number: i4) -> string {
+  let len = num_len(number, 1, 0)
+  let buffer = {len char}[]
+  fill_buffer(buffer, len - 1, number)
+  return buffer
 }
 
 fn fill_buffer(buffer: {1 char}, index: i4, number: i4) {
@@ -13,13 +13,14 @@ fn fill_buffer(buffer: {1 char}, index: i4, number: i4) {
   }
   return 0
 }
-
-fn str_conv(number: i4) -> string {
-  let len = num_len(number, 1, 0)
-  let buffer = {len char}[]
-  fill_buffer(buffer, len - 1, number)
-  return buffer
+fn num_len(num: i4, mul: i4, count: i4) -> i4 {
+  if mul <= num {
+    return num_len(num, mul * 10, count + 1)
+  }
+  return count
 }
-let string = str_conv(123)
-printf(string)
+
+let a = 10
+&a *= 2
+printf(str_conv(a))
 return 0

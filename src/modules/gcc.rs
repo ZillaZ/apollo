@@ -53,9 +53,8 @@ pub enum Helper {
 }
 
 pub struct Memory<'a> {
-    pub variables: HashMap<String, LValue<'a>>,
+    pub variables: HashMap<String, HashMap<String, LValue<'a>>>,
     pub functions: HashMap<String, Function<'a>>,
-    pub function_args: HashMap<String, HashMap<String, Parameter<'a>>>,
     pub builtins: Vec<String>,
     pub function_scope: String,
     pub anon_count: u32
@@ -65,11 +64,10 @@ impl <'a>Memory<'a> {
     pub fn new() -> Self {
         let variables = HashMap::new();
         let functions = HashMap::new();
-        let function_args = HashMap::new();
         let builtins = vec!["printf", "strnlen", "malloc"].iter().map(|x| x.to_string()).collect::<_>();
         let function_scope = "main".into();
         let anon_count = 0;
-        Self { variables, functions, function_args, builtins, function_scope, anon_count }
+        Self { variables, functions, builtins, function_scope, anon_count }
     }
 }
 
@@ -84,9 +82,11 @@ impl<'a> GccContext<'a> {
         context.set_optimization_level(gccjit::OptimizationLevel::Aggressive);
         Self { context, ast_context }
     }
+
     pub fn gen_bytecode(&'a self, mut memory: Memory<'a>, ast: &mut Vec<Expr>) {
         self.add_builtin_functions(&mut memory);
         let dt = self.context.new_int_type(4, true);
+        memory.variables.insert("main".into(), HashMap::new());
         let function =
             self.context
                 .new_function(None, gccjit::FunctionType::Exported, dt, &[], "main", false);
@@ -125,6 +125,7 @@ impl<'a> GccContext<'a> {
             OverloadedOp::Div => BinaryOp::Divide
         };
         let rhs = self.parse_value(&overloaded.rhs, block, memory);
+        println!("parsing here");
         block.add_assignment_op(None, lhs.dereference(), op, rhs.rvalue());
     }
 
@@ -177,7 +178,8 @@ impl<'a> GccContext<'a> {
             Value::Operation(operation) => self.parse_operation(operation, block, memory),
             Value::Call(call) => self.parse_call(call, block, memory),
             Value::Block(ref ast_block) => {
-                let args : Vec<(String, RValue<'a>)> = memory.variables.iter().map(|x| (x.0.clone(), x.1.to_rvalue())).collect();
+                let variables = memory.variables.get(&memory.function_scope).unwrap();
+                let args : Vec<(String, RValue<'a>)> = variables.iter().map(|x| (x.0.clone(), x.1.to_rvalue())).collect();
                 let params : Vec<Parameter<'a>> = args.iter().map(|x| self.context.new_parameter(None, x.1.get_type(), x.0.clone())).collect();
                 let return_value = self.parse_value(&ast_block.box_return.as_ref().unwrap().value, block, memory).rvalue();
                 let name = format!("anon_{}", memory.anon_count);
@@ -256,9 +258,12 @@ impl<'a> GccContext<'a> {
     }
 
     fn parse_function(&'a self, function: &structs::Function, block: Block<'a>, memory: &mut Memory<'a>) {
+        if memory.functions.contains_key(&function.name.name) {
+            return
+        }
         let return_type = match function.return_type {
             Some(ref data_type) => self.parse_datatype(data_type),
-            None => self.context.new_int_type(4, true)
+            None => self.context.new_int_type(1, true)
         };
         let aux = memory.function_scope.clone();
         memory.function_scope = function.name.name.clone();
@@ -269,7 +274,8 @@ impl<'a> GccContext<'a> {
             let param = params[i];
             arg_map.insert(arg.name.name.clone(), param);
         }
-        memory.function_args.insert(function.name.name.clone(), arg_map);
+        let other_map = arg_map.iter().map(|x| (x.0.clone(), x.1.to_lvalue())).collect::<_>();
+        memory.variables.insert(function.name.name.clone(), other_map);
         let new_function = self.context.new_function(None, gccjit::FunctionType::Internal, return_type, params.as_slice(), &function.name.name, false);
         memory.functions.insert(function.name.name.clone(), new_function);
         let new_block = new_function.new_block(&format!("{}_block", function.name.name));
@@ -343,6 +349,7 @@ impl<'a> GccContext<'a> {
     fn parse_declaration(&'a self, declaration: &structs::Declaration, block: Block<'a>, memory: &mut Memory<'a>) {
         let mut value = self.parse_value(&declaration.value, block, memory).rvalue();
         let function = block.get_function();
+        let variables = memory.variables.get_mut(&memory.function_scope).unwrap();
         if let Some(ref dt) = declaration.datatype {
             let data_type = self.parse_datatype(dt);
             if !value.get_type().is_compatible_with(data_type) {
@@ -350,11 +357,11 @@ impl<'a> GccContext<'a> {
             }
             let lvalue = function.new_local(None, data_type, &declaration.name.name);
             block.add_assignment(None, lvalue, value);
-            memory.variables.insert(declaration.name.name.clone(), lvalue);
+            variables.insert(declaration.name.name.clone(), lvalue);
         }else{
             let lvalue = function.new_local(None, value.get_type(), &declaration.name.name);
             block.add_assignment(None, lvalue, value);
-            memory.variables.insert(declaration.name.name.clone(), lvalue);
+            variables.insert(declaration.name.name.clone(), lvalue);
         }
     }
 
@@ -372,6 +379,9 @@ impl<'a> GccContext<'a> {
     }
 
     fn parse_call(&'a self, call: &structs::Call, block: Block<'a>, memory: &mut Memory<'a>) -> GccValues<'a> {
+        if !memory.functions.contains_key(&call.name.name) {
+            self.parse_function(self.ast_context.functions.get(&call.name.name).unwrap(), block, memory);
+        }
         let function = memory.functions.get(&call.name.name).unwrap().clone();
         let mut args = self.parse_params(&call. args, block, memory).iter().map(|x| x.get_reference()).collect::<Vec<_>>();
 
@@ -462,12 +472,11 @@ impl<'a> GccContext<'a> {
     }
 
     fn parse_name(&self, name: &Name, memory: &mut Memory<'a>, block: Block<'_>) -> GccValues<'a> {
-        if let Some(var) = memory.variables.get(&name.name) {
+        let variables = memory.variables.get(&memory.function_scope).unwrap();
+        if let Some(var) = variables.get(&name.name) {
             self.access_name(var, name)
-        }else if let Some(parameters) = memory.function_args.get(&memory.function_scope) {
-            self.access_name(&parameters.get(&name.name).unwrap().to_lvalue(), name)
         }else{
-            panic!("porra fudeokkkkkkkk")
+            panic!("Variable {} not found. Working on {}", name.name, memory.function_scope)
         }
     }
 
