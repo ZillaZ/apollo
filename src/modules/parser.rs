@@ -220,6 +220,9 @@ impl NoirParser {
                 _ => unreachable!()
             }
         }
+        if array_type.size == Value::Int(0) {
+            array_type.size = Value::Int(elements.len() as i32)
+        }
         Array {
             array_type: Box::new(array_type),
             elements

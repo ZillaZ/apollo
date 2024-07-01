@@ -1,11 +1,11 @@
 fn str_conv(number: i4) -> string {
   let len = num_len(number, 1, 0)
-  let buffer = {len char}[]
+  let buffer = array(char len)[]
   fill_buffer(buffer, len - 1, number)
   return buffer
 }
 
-fn fill_buffer(buffer: {1 char}, index: i4, number: i4) {
+fn fill_buffer(buffer: array(char), index: i4, number: i4) {
   if number > 0 {
     let digit = number % 10
     buffer[index] = digit + 48
