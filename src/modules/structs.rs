@@ -1,4 +1,4 @@
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Operations {
     Add,
     Sub,
@@ -13,58 +13,91 @@ pub enum Operations {
     Gt,
     And,
     Or,
-    Not
+    Not,
+    Modulo
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct UnaryOp {
     pub prefix: Operations,
     pub value: Box<Operation>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct BinaryOp {
     pub lhs: Box<Operation>,
     pub op: Operations,
     pub rhs: Box<Operation>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum DataType {
     Float(u8),
     Int(u8),
     UFloat(u8),
     UInt(u8),
     String,
+    Array(Box<ArrayType>),
+    Char,
     Bool
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Arg {
-    pub name: String,
+    pub name: Name,
     pub datatype: DataType,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Operation {
     Atom(Atom),
     BinaryOp(BinaryOp),
     UnaryOp(UnaryOp),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq)]
+pub enum RefOp {
+    Reference,
+    Dereference
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Name {
+    pub name: String,
+    pub op: Option<RefOp>
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum Parameter {
-    Name(String),
+    Name(Name),
     Value(Value),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq)]
+pub enum AssignVar {
+    Name(Name),
+    Access(ArrayAccess)
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Assignment {
+    pub var: AssignVar,
+    pub value: Value
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct Call {
-    pub name: String,
+    pub name: Name,
     pub args: Vec<Parameter>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct ArrayAccess {
+    pub value: Value,
+    pub index: Value
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum Value {
     Operation(Box<Operation>),
     Call(Call),
@@ -72,51 +105,66 @@ pub enum Value {
     Int(i32),
     Float(f32),
     Block(Box<Block>),
-    Name(String),
+    Name(Name),
     Atom(Box<Atom>),
     Bool(bool),
-    If(If)
+    If(If),
+    Char(char),
+    Array(Array),
+    ArrayAccess(Box<ArrayAccess>)
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct ArrayType {
+    pub size: Value,
+    pub data_type: DataType
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Array {
+    pub array_type: Box<ArrayType>,
+    pub elements: Vec<Value>
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct Return {
     pub value: Value,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Block {
     pub expr: Vec<Box<Expr>>,
     pub box_return: Option<Return>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Function {
-    pub name: String,
+    pub name: Name,
     pub args: Vec<Arg>,
     pub return_type: Option<DataType>,
     pub block: Box<Block>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Declaration {
-    pub name: String,
+    pub name: Name,
     pub datatype: Option<DataType>,
     pub value: Value,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Atom {
     pub is_neg: bool,
     pub value: Value
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Otherwise {
     Block(Block),
     If(If)
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct If {
     pub not: bool,
     pub condition: Box<Operation>,
@@ -124,12 +172,29 @@ pub struct If {
     pub otherwise: Option<Box<Otherwise>>
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq)]
+pub enum OverloadedOp {
+    Add,
+    Sub,
+    Mul,
+    Div
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Overloaded {
+    pub lhs: Name,
+    pub op: OverloadedOp,
+    pub rhs: Value
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum Expr {
     Return(Return),
     Call(Call),
     Function(Function),
     Block(Block),
     Declaration(Declaration),
-    If(If)
+    If(If),
+    Assignment(Assignment),
+    Overloaded(Overloaded)
 }

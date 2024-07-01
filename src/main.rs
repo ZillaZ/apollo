@@ -2,7 +2,7 @@ use modules::parser::NoirParser;
 use pest::{iterators::Pairs, Parser};
 use pest_derive::Parser;
 
-use crate::modules::gcc::Memory;
+use crate::modules::gcc::{GccContext, Memory};
 
 mod modules;
 
@@ -13,12 +13,13 @@ struct Program;
 fn main() {
     let parser = NoirParser::new();
     let memory = Memory::new();
-    let input = read_file("main.noir");
+    let input = read_file("main.apo");
     let input = input.trim();
     let mut pairs: Pairs<Rule> = Program::parse(Rule::program, &input).unwrap();
     let mut ast = parser.gen_ast(&mut pairs);
-    println!("{:?}", ast);
-    parser.gen_bytecode(memory, &mut ast);
+    println!("{:?}", ast.expressions);
+    let gcc = GccContext::new(ast.context);
+    gcc.gen_bytecode(memory, &mut ast.expressions);
 }
 
 fn read_file(path: &str) -> String {

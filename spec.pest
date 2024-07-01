@@ -1,52 +1,67 @@
 WHITESPACE = _{ " " | NEWLINE }
 
-name_str     = @{ (ASCII_ALPHA) ~ (ASCII_ALPHANUMERIC | "_")* }
-program      = _{ SOI ~ expr+ ~ EOI }
-string       = _{ (ASCII_ALPHANUMERIC | "%" | "\\" | "_" | "{" | "}" | "!")* }
-integer      = @{ ASCII_DIGIT+ }
-float        = @{ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ }
-binary_op    = _{ add | sub | mul | div | gt | lt | gte | lte | cmp_eq | neq | and | or }
-add          =  { "+" }
-sub          =  { "-" }
-mul          =  { "*" }
-div          =  { "/" }
-dd           = _{ ":" }
-eq           = _{ "=" }
-gt           =  { ">" }
-lt           =  { "<" }
-lte          =  { "<=" }
-gte          =  { ">=" }
-cmp_eq       =  { "==" }
-neq          =  { "!=" }
-and          =  { "&&" }
-or           =  { "||" }
-operation    =  { atom ~ (binary_op ~ atom)* }
-expr         = _{ (return | function | call | block | declaration | if) }
-declaration  =  { let ~ name ~ (dd ~ datatype)? ~ eq ~ value }
-value        =  { if | bool | operation | call | string_value | integer | float | name }
-call         =  { name ~ "(" ~ (param)* ~ ")" }
-param        =  { value | name }
-name         =  { !integer ~ name_str }
-function     =  { fn ~ name ~ args ~ return_type? ~ block }
-return_type  =  _{ arrow ~ datatype }
-arrow        = _{ "->" }
-args         =  { "(" ~ arg* ~ ")" }
-v            =  { "," }
-arg          = _{ name ~ dd ~ datatype ~ (v ~ name ~ dd ~ datatype)* }
-datatype     =  { float_type | int_type | string_type }
-int_type     =  { unsigned? ~ "i" ~ integer }
-float_type   =  { unsigned? ~ "f" ~ integer }
-string_type  =  { "string" }
-string_value =  { "\"" ~ string ~ "\"" }
-unsigned     =  { "u" }
-fn           = _{ "fn" }
-let          = _{ "let" }
-block        =  { "{" ~ expr* ~ return? ~ "}" }
-return       =  { "return" ~ value }
-primary      =  { float | integer | bool | call | name | block |"(" ~ operation ~ ")" }
-unary_minus  =  { "-" }
-atom         =  { unary_minus? ~ primary }
-not          =  { "!" }
-if           =  { "if" ~ not? ~ operation ~ block ~ otherwise? }
-otherwise    =  { "else" ~ (block | if) }
-bool         =  { "true" | "false" }
+name_str       = @{ (ASCII_ALPHA) ~ (ASCII_ALPHANUMERIC | "_")* }
+program        = _{ SOI ~ expr+ ~ EOI }
+char           =  { "'" ~ ASCII ~ "'" }
+array_type     =  { "{" ~ value ~ datatype ~ "}" }
+array          =  { array_type ~ "[" ~ value* ~ "]" }
+array_access   =  { (call | name) ~ "[" ~ value ~ "]" }
+string         = _{ (ASCII_ALPHANUMERIC | "%" | "\\" | "_" | "{" | "}" | "!")* }
+integer        = @{ ASCII_DIGIT+ }
+float          = @{ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ }
+binary_op      = _{ modulo | add | sub | mul | div | gte | gt | lte | lt | cmp_eq | neq | and | or }
+overloaded_op  =  { name ~ overloaded_ops ~ value }
+modulo         =  { "%" }
+add            =  { "+" }
+sub            =  { "-" }
+mul            =  { "*" }
+div            =  { "/" }
+add_to         =  { "+=" }
+sub_to         =  { "-=" }
+mul_to         =  { "*=" }
+div_to         =  { "/=" }
+dd             = _{ ":" }
+eq             = _{ "=" }
+gt             =  { ">" }
+lt             =  { "<" }
+lte            =  { "<=" }
+gte            =  { ">=" }
+cmp_eq         =  { "eq" | "==" }
+neq            =  { "not eq" | "!=" }
+and            =  { "and" | "&&" }
+or             =  { "or" | "||" }
+operation      =  { atom ~ (binary_op ~ atom)* }
+overloaded_ops =  { add_to | sub_to | mul_to | div_to }
+expr           = _{ (overloaded_op | return | function | call | block | declaration | assignment | if) }
+declaration    =  { let ~ name ~ (dd ~ datatype)? ~ eq ~ value }
+assignment     =  { (array_access | name) ~ eq ~ value }
+value          =  { if | bool | array_access | operation | call | string_value | char | integer | array | float | name }
+call           =  { name ~ "(" ~ param? ~ (v ~ param)* ~ ")" ~ array_access? }
+param          =  { value | name }
+name           =  { !integer ~ (ref | deref)? ~ name_str }
+function       =  { fn ~ name ~ args ~ return_type? ~ block }
+return_type    = _{ arrow ~ datatype }
+arrow          = _{ "->" }
+args           =  { "(" ~ arg* ~ ")" }
+v              =  { "," }
+arg            = _{ name ~ dd ~ datatype ~ (v ~ name ~ dd ~ datatype)* }
+datatype       =  { array_type | float_type | int_type | string_type | char_type }
+int_type       =  { unsigned? ~ "i" ~ integer }
+char_type      =  { "char" }
+float_type     =  { "f" ~ integer }
+string_type    =  { "string" }
+string_value   =  { "\"" ~ string ~ "\"" }
+unsigned       =  { "u" }
+fn             = _{ "fn" }
+let            = _{ "let" }
+block          =  { "{" ~ expr* ~ return? ~ "}" }
+return         =  { "return" ~ value }
+primary        =  { float | integer | bool | call | name | block | "(" ~ operation ~ ")" }
+unary_minus    =  { "-" }
+atom           =  { unary_minus? ~ primary }
+not            =  { "!" }
+if             =  { "if" ~ not? ~ operation ~ block ~ otherwise? }
+otherwise      =  { "else" ~ (block | if) }
+bool           =  { "true" | "false" }
+ref            =  { "&" }
+deref          =  { "*" }
