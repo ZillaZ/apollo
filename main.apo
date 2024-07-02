@@ -11,7 +11,7 @@ fn fill_buffer(buffer: array(char), index: i4, number: i4) {
     buffer[index] = digit + 48
     fill_buffer(buffer, index - 1, number / 10)
   }
-  return 0
+  return
 }
 fn num_len(num: i4, mul: i4, count: i4) -> i4 {
   if mul <= num {
@@ -22,5 +22,10 @@ fn num_len(num: i4, mul: i4, count: i4) -> i4 {
 
 let a = 10
 &a *= 2
-printf(str_conv(a))
+let b = 2.9
+let c = {
+  printf(str_conv(10))
+  return 2.5
+}
+printf(str_conv(c))
 return 0

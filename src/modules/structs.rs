@@ -128,7 +128,7 @@ pub struct Array {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Return {
-    pub value: Value,
+    pub value: Option<Value>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

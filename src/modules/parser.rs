@@ -156,9 +156,12 @@ impl NoirParser {
     }
 
     pub fn build_return(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Return {
-        let pair = pairs.next().unwrap();
-        let value = self.build_value(&mut pair.into_inner(), context);
-        Return { value }
+        if let Some(pair) = pairs.next() {
+            let value = self.build_value(&mut pair.into_inner(), context);
+            Return { value: Some(value) }
+        }else{
+            Return { value: None }
+        }
     }
 
     fn build_value(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Value {

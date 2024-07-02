@@ -1,6 +1,5 @@
 use std::collections::HashMap;
-use std::ops::Deref;
-use gccjit::{BinaryOp, Block, ComparisonOp, Context, Function, LValue, Parameter, RValue, ToLValue, ToRValue, Type, UnaryOp};
+use gccjit::{BinaryOp, Block, ComparisonOp, Context, Function, LValue, Parameter, RValue, ToLValue, ToRValue, Type, UnaryOp, Typeable};
 
 use crate::modules::structs::Otherwise;
 use super::ast_context::AstContext;
@@ -27,7 +26,6 @@ impl <'a>GccValues<'a> {
         match self {
             GccValues::L(lvalue) => {
                 let address = lvalue.get_address(None);
-                
                 address
             }
             GccValues::R(rvalue) => {
@@ -73,7 +71,7 @@ impl <'a>Memory<'a> {
 
 pub struct GccContext<'a> {
     context: Context<'a>,
-    ast_context: AstContext
+    ast_context: AstContext,
 }
 
 impl<'a> GccContext<'a> {
@@ -85,7 +83,7 @@ impl<'a> GccContext<'a> {
 
     pub fn gen_bytecode(&'a self, mut memory: Memory<'a>, ast: &mut Vec<Expr>) {
         self.add_builtin_functions(&mut memory);
-        let dt = self.context.new_int_type(4, true);
+        let dt = <i32 as Typeable>::get_type(&self.context);
         memory.variables.insert("main".into(), HashMap::new());
         let function =
             self.context
@@ -97,11 +95,8 @@ impl<'a> GccContext<'a> {
             match expr {
                 Expr::Return(ref rtn) =>  { self.build_return(rtn, block, reference); },
                 Expr::Call(ref call) => {
-                    let function = block.get_function();
                     let result = self.parse_call(call, block, reference).rvalue();
-                    let anon = function.new_local(None, result.get_type(), &format!("_{}", memory.anon_count));
-                    memory.anon_count += 1;
-                    block.add_assignment(None, anon, result);
+                    block.add_eval(None, result);
                 },
                 Expr::Function(ref function) => { self.parse_function(function, block, reference); },
                 Expr::Block(ref ast_block) => { self.parse_block(ast_block, block, reference); },
@@ -159,12 +154,16 @@ impl<'a> GccContext<'a> {
     }
 
     fn build_return(&'a self, rtn: &structs::Return, block: Block<'a>, memory: &mut Memory<'a>) {
-        let mut value = self.parse_value(&rtn.value, block, memory).rvalue();
-        let function_return_type = block.get_function().get_return_type();
-        if !function_return_type.is_compatible_with(value.get_type()) {
-            value = self.context.new_cast(None, value, function_return_type);
+        if let Some(ref value) = rtn.value {
+            let mut value = self.parse_value(value, block, memory).rvalue();
+            let function_return_type = block.get_function().get_return_type();
+            if !function_return_type.is_compatible_with(value.get_type()) {
+                value = self.context.new_cast(None, value, function_return_type);
+            }
+            block.end_with_return(None, value);
+        }else{
+            block.end_with_void_return(None);
         }
-        block.end_with_return(None, value);
     }
 
     fn parse_value(&'a self, value: &structs::Value, block: Block<'a>, memory: &mut Memory<'a>) -> GccValues<'a> {
@@ -181,14 +180,18 @@ impl<'a> GccContext<'a> {
                 let variables = memory.variables.get(&memory.function_scope).unwrap();
                 let args : Vec<(String, RValue<'a>)> = variables.iter().map(|x| (x.0.clone(), x.1.to_rvalue())).collect();
                 let params : Vec<Parameter<'a>> = args.iter().map(|x| self.context.new_parameter(None, x.1.get_type(), x.0.clone())).collect();
-                let return_value = self.parse_value(&ast_block.box_return.as_ref().unwrap().value, block, memory).rvalue();
-                let name = format!("anon_{}", memory.anon_count);
-                memory.anon_count += 1;
-                let function = self.context.new_function(None, gccjit::FunctionType::Internal, return_value.get_type(), params.as_slice(), &name, false);
-                let new_block = function.new_block("anon_block");
-                memory.functions.insert(name.clone(), function);
-                self.parse_block(ast_block, new_block, memory);
-                GccValues::R(self.context.new_call(None, function, args.iter().map(|x| x.1).collect::<Vec<_>>().as_slice()))
+                if let Some(ref value) = ast_block.box_return {
+                    let return_value = self.parse_value(&value.value.as_ref().unwrap(), block, memory).rvalue();
+                    let name = format!("anon_{}", memory.anon_count);
+                    memory.anon_count += 1;
+                    let function = self.context.new_function(None, gccjit::FunctionType::Internal, return_value.get_type(), params.as_slice(), &name, false);
+                    let new_block = function.new_block("anon_block");
+                    memory.functions.insert(name.clone(), function);
+                    self.parse_block(ast_block, new_block, memory);
+                    GccValues::R(self.context.new_call(None, function, args.iter().map(|x| x.1).collect::<Vec<_>>().as_slice()))
+                }else{
+                    panic!("Block as value with no return is invalid!");
+                }
             }
             Value::Array(ref array) => self.parse_array(array, block, memory),
             Value::ArrayAccess(ref access) => {
@@ -203,7 +206,7 @@ impl<'a> GccContext<'a> {
     }
 
     fn parse_char(&'a self, c: &char) -> GccValues<'a> {
-        GccValues::R(self.context.new_rvalue_from_int(self.context.new_c_type(gccjit::CType::Char), *c.to_string().bytes().peekable().peek().unwrap() as i32))
+        GccValues::R(self.context.new_rvalue_from_int(<char as Typeable>::get_type(&self.context), *c.to_string().bytes().peekable().peek().unwrap() as i32))
     }
 
     fn parse_array_access(&'a self, access: &structs::ArrayAccess, block: Block<'a>, memory: &mut Memory<'a>) -> GccValues<'a> {
@@ -220,7 +223,7 @@ impl<'a> GccContext<'a> {
         let allocation = self.context.new_call(None, *malloc, &[size]);
         let allocation = self.context.new_cast(None, allocation, data_type.make_pointer());
         for i in 0..array.elements.len() {
-            let access = self.context.new_array_access(None, allocation, self.context.new_rvalue_from_int(self.context.new_int_type(4, true), i as i32));
+            let access = self.context.new_array_access(None, allocation, self.context.new_rvalue_from_int(<i32 as Typeable>::get_type(&self.context), i as i32));
             let element = &array.elements[i];
             let element = self.parse_value(element, block, memory).rvalue();
             block.add_assignment(None, access, element);
@@ -233,11 +236,8 @@ impl<'a> GccContext<'a> {
             match **expr {
                 Expr::Block(ref ast_block) => { self.parse_block(&Box::new(ast_block), new_block, memory); },
                 Expr::Call(ref call) => {
-                    let function = new_block.get_function();
                     let result = self.parse_call(call, new_block, memory).rvalue();
-                    let anon = function.new_local(None, result.get_type(), &format!("_{}", memory.anon_count));
-                    memory.anon_count += 1;
-                    new_block.add_assignment(None, anon, result);
+                    new_block.add_eval(None, result);
                 },
                 Expr::Declaration(ref declaration) => { self.parse_declaration(declaration, new_block, memory); },
                 Expr::Function(ref function) =>  { self.parse_function(function, new_block, memory); },
@@ -263,7 +263,7 @@ impl<'a> GccContext<'a> {
         }
         let return_type = match function.return_type {
             Some(ref data_type) => self.parse_datatype(data_type),
-            None => self.context.new_int_type(1, true)
+            None => <() as Typeable>::get_type(&self.context)
         };
         let aux = memory.function_scope.clone();
         memory.function_scope = function.name.name.clone();
@@ -302,7 +302,7 @@ impl<'a> GccContext<'a> {
     fn parse_datatype(&'a self, datatype: &DataType) -> Type<'_> {
         let string_type = self.context.new_string_literal("test").get_type();
         match datatype {
-            DataType::Bool => self.context.new_c_type(gccjit::CType::Bool),
+            DataType::Bool => <bool as Typeable>::get_type(&self.context),
             DataType::Float(bytecount) | DataType::Int(bytecount) => self.context.new_int_type(*bytecount as i32, true),
             DataType::UFloat(bytecount) | DataType::UInt(bytecount) => self.context.new_int_type(*bytecount as i32, false),
             DataType::Array(array_type) => {
@@ -310,7 +310,7 @@ impl<'a> GccContext<'a> {
                 element_type.make_pointer()
             },
             DataType::String => string_type,
-            DataType::Char => self.context.new_c_type(gccjit::CType::Char)
+            DataType::Char => <char as Typeable>::get_type(&self.context)
         }
     }
 
@@ -451,7 +451,7 @@ impl<'a> GccContext<'a> {
         match mul {
             Some(operations) => {
                 let data_type = value.rvalue().get_type();
-                let bool_type = self.context.new_c_type(gccjit::CType::Bool);
+                let bool_type = <bool as Typeable>::get_type(&self.context);
                 if bool_type.is_compatible_with(data_type) {
                     return GccValues::R(self.context.new_unary_op(None, operations.1, bool_type, value.rvalue()))
                 }else{
@@ -463,7 +463,7 @@ impl<'a> GccContext<'a> {
     }
 
     fn parse_bool(&self, boolean: bool) -> GccValues<'_> {
-        let data_type = self.context.new_c_type(gccjit::CType::Bool);
+        let data_type = <bool as Typeable>::get_type(&self.context);
         let bit = match boolean {
             true => 1,
             false => 0
@@ -498,12 +498,12 @@ impl<'a> GccContext<'a> {
     }
 
     fn parse_int(&self, number: i32) -> GccValues<'_> {
-        let data_type = self.context.new_int_type(4, true);
+        let data_type = <i32 as Typeable>::get_type(&self.context);
         GccValues::R(self.context.new_rvalue_from_int(data_type, number))
     }
 
     fn parse_float(&self, number: f32) -> GccValues<'_> {
-        let data_type = self.context.new_int_type(4, true);
+        let data_type = <f32 as Typeable>::get_type(&self.context);
         GccValues::R(self.context.new_rvalue_from_double(data_type, number as f64))
     }
 }
