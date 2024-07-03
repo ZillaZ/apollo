@@ -1,11 +1,2 @@
-use static strings
-
-let a = 10
-&a *= 2
-let b = 2.9
-let c = {
-  printf(str_conv(10))
-  return 2.5
-}
-printf(str_conv(c))
+printf("The number is %d %d", 5, 20)
 return 0

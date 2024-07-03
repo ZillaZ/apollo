@@ -178,8 +178,14 @@ impl<'a> GccContext<'a> {
     fn add_builtin_functions(&'a self, memory: &mut Memory<'a>) {
         for i in 0..memory.builtins.len() {
             let name = &memory.builtins[i];
-            let function = self.context.get_builtin_function(name);
-            memory.functions.insert(name.clone(), function);
+            if name == "printf" {
+                let format = self.context.new_parameter(None, self.context.new_c_type(gccjit::CType::ConstCharPtr), "format");
+                let function = self.context.new_function(None, gccjit::FunctionType::Extern, <i32 as Typeable>::get_type(&self.context), &[format], "printf", true);
+                memory.functions.insert(name.clone(), function);
+            }else{
+                let function = self.context.get_builtin_function(name);
+                memory.functions.insert(name.clone(), function);
+            }
         }
     }
 
@@ -416,10 +422,15 @@ impl<'a> GccContext<'a> {
         if !memory.functions.contains_key(&call.name.name) {
             self.parse_function(self.ast_context.functions.get(&call.name.name).unwrap(), block, memory);
         }
+
         let function = memory.functions.get(&call.name.name).unwrap().clone();
         let mut args = self.parse_params(&call. args, block, memory).iter().map(|x| x.get_reference()).collect::<Vec<_>>();
 
         for i in 0..args.len() {
+            let param_count = function.get_param_count();
+            if i < param_count {
+                break
+            }
             let declared_type = function.get_param(i as i32).to_rvalue().get_type();
             if !declared_type.is_compatible_with(args[i].get_type()) {
                 args[i] = self.context.new_cast(None, args[i], declared_type);
