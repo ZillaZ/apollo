@@ -2,13 +2,15 @@ use pest::{
     iterators::{Pair, Pairs},
     pratt_parser::{Assoc, Op, PrattParser},
 };
-
+use pest::Parser;
+use super::super::Program;
 use super::ast_context::AstContext;
 use crate::{modules::structs::*, Rule};
 
 #[derive(Debug)]
 pub struct Ast {
     pub expressions: Vec<Expr>,
+    pub imports: Vec<Vec<Expr>>,
     pub context: AstContext
 }
 
@@ -32,10 +34,31 @@ impl NoirParser {
     pub fn gen_ast(&self, pairs: &mut Pairs<Rule>) -> Ast {
         let mut context = AstContext::new();
         let expressions = self.build_expression(pairs, &mut context);
+        let imports = expressions.iter().filter(|x| match x {
+            Expr::Import(_) => true,
+            _ => false
+        }).map(|x| x.import()).collect::<Vec<Import>>();
+        let imports = self.load_imports(&imports, &mut context);
+
         Ast {
             expressions,
-            context
+            context,
+            imports
         }
+    }
+
+
+    fn load_imports(&self, imports: &Vec<Import>, context: &mut AstContext) -> Vec<Vec<Expr>> {
+        let mut rtn = Vec::new();
+        for import in imports {
+            let libs_path = std::env::var("APOLLO_LIBS").unwrap();
+            let lib_path = format!("{}/{}.apo", libs_path, import.name);
+            let input = std::fs::read_to_string(lib_path).unwrap();
+            let mut pairs : Pairs<Rule> = Program::parse(Rule::program, &input).unwrap();
+            let expr = self.build_expression(&mut pairs, context);
+            rtn.push(expr);
+        }
+        rtn
     }
 
     fn build_expression(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Vec<Expr> {
@@ -50,12 +73,30 @@ impl NoirParser {
                 Rule::r#if => Expr::If(self.build_if(&mut pair.into_inner(), context)),
                 Rule::assignment => Expr::Assignment(self.build_assignment(&mut pair.into_inner(), context)),
                 Rule::overloaded_op => Expr::Overloaded(self.build_overloaded(&mut pair.into_inner(), context)),
+                Rule::import => Expr::Import(self.build_import(&mut pair.into_inner(), context)),
                 Rule::EOI => continue,
                 rule => unreachable!("{:?}", rule),
             };
             expressions.push(expr);
         }
         expressions
+    }
+
+    fn build_import(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Import {
+        let mut import = Import {
+            kind: ImportKind::Static,
+            name: String::new()
+        };
+        for pair in pairs {
+            match pair.as_rule() {
+                Rule::r#static => import.kind = ImportKind::Static,
+                Rule::r#dyn => import.kind = ImportKind::Dynamic,
+                Rule::name_str => import.name = pair.as_str().trim().to_string(),
+                _ => unreachable!()
+            }
+        }
+        context.imported.push(import.clone());
+        import
     }
 
     fn build_overloaded(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Overloaded {
@@ -308,6 +349,7 @@ impl NoirParser {
 
     fn build_function(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Function {
         let mut function = Function {
+            is_extern: false,
             name: Name {
                 name: String::new(),
                 op: None
@@ -321,6 +363,7 @@ impl NoirParser {
         };
         for pair in pairs.clone() {
             match pair.as_rule() {
+                Rule::export => function.is_extern = true,
                 Rule::name => function.name = self.build_name(&mut pair.into_inner(), context),
                 Rule::args => function.args = self.build_args(&mut pair.into_inner(), context),
                 Rule::datatype => function.return_type = Some(self.build_datatype(&mut pair.into_inner(), context)),

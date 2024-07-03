@@ -139,6 +139,7 @@ pub struct Block {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Function {
+    pub is_extern: bool,
     pub name: Name,
     pub args: Vec<Arg>,
     pub return_type: Option<DataType>,
@@ -188,6 +189,18 @@ pub struct Overloaded {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub enum ImportKind {
+    Dynamic,
+    Static
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Import {
+    pub kind: ImportKind,
+    pub name: String
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum Expr {
     Return(Return),
     Call(Call),
@@ -196,5 +209,15 @@ pub enum Expr {
     Declaration(Declaration),
     If(If),
     Assignment(Assignment),
-    Overloaded(Overloaded)
+    Overloaded(Overloaded),
+    Import(Import)
+}
+
+impl Expr {
+    pub fn import(&self) -> Import {
+        match self {
+            Expr::Import(import) => import.clone(),
+            _ => panic!()
+        }
+    }
 }

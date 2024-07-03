@@ -3,6 +3,7 @@ use gccjit::{BinaryOp, Block, ComparisonOp, Context, Function, LValue, Parameter
 
 use crate::modules::structs::Otherwise;
 use super::ast_context::AstContext;
+use super::parser::Ast;
 use super::structs::{self, AssignVar, DataType, Name, Overloaded, OverloadedOp, RefOp, Value};
 use super::structs::Expr;
 
@@ -81,8 +82,9 @@ impl<'a> GccContext<'a> {
         Self { context, ast_context }
     }
 
-    pub fn gen_bytecode(&'a self, mut memory: Memory<'a>, ast: &mut Vec<Expr>) {
+    pub fn gen_bytecode(&'a self, mut memory: Memory<'a>, ast: &Vec<Expr>, imports: &Vec<Vec<Expr>>) {
         self.add_builtin_functions(&mut memory);
+        self.build_imports(imports, &mut memory);
         let dt = <i32 as Typeable>::get_type(&self.context);
         memory.variables.insert("main".into(), HashMap::new());
         let function =
@@ -104,11 +106,39 @@ impl<'a> GccContext<'a> {
                 Expr::If(ref ast_if) => { block = self.parse_if(ast_if, block, reference); },
                 Expr::Assignment(ref assignment) => { self.parse_assignment(assignment, block, reference); }
                 Expr::Overloaded(ref overloaded) => { self.parse_overloaded(overloaded, block, reference); }
+                _ => continue
             }
         }
         self.context.dump_to_file("apollo.c", false);
         self.context.compile_to_file(gccjit::OutputKind::Executable, "apollo");
-        self.context.compile_to_file(gccjit::OutputKind::Assembler, "apollo.s");
+        self.context.compile_to_file(gccjit::OutputKind::DynamicLibrary, "apollo.so");
+    }
+
+    fn build_imports(&'a self, imports: &Vec<Vec<Expr>>, memory: &mut Memory<'a>) {
+        for ast in imports {
+            let dt = <() as Typeable>::get_type(&self.context);
+            let function =
+                self.context
+                    .new_function(None, gccjit::FunctionType::Exported, dt, &[], "imported", false);
+            let mut block = function.new_block("initial");
+            for expr in ast {
+                match expr {
+                    Expr::Return(ref rtn) =>  { self.build_return(rtn, block, memory); },
+                    Expr::Call(ref call) => {
+                        let result = self.parse_call(call, block, memory).rvalue();
+                        block.add_eval(None, result);
+                    },
+                    Expr::Function(ref function) => { self.parse_function(function, block, memory); },
+                    Expr::Block(ref ast_block) => { self.parse_block(ast_block, block, memory); },
+                    Expr::Declaration(ref declaration) => { self.parse_declaration(declaration, block, memory); },
+                    Expr::If(ref ast_if) => { block = self.parse_if(ast_if, block, memory); },
+                    Expr::Assignment(ref assignment) => { self.parse_assignment(assignment, block, memory); }
+                    Expr::Overloaded(ref overloaded) => { self.parse_overloaded(overloaded, block, memory); }
+                    _ => continue
+                }
+            }
+            block.end_with_void_return(None);
+        }
     }
 
     fn parse_overloaded(&'a self, overloaded: &Overloaded, block: Block<'a>, memory: &mut Memory<'a>) {
@@ -276,7 +306,11 @@ impl<'a> GccContext<'a> {
         }
         let other_map = arg_map.iter().map(|x| (x.0.clone(), x.1.to_lvalue())).collect::<_>();
         memory.variables.insert(function.name.name.clone(), other_map);
-        let new_function = self.context.new_function(None, gccjit::FunctionType::Internal, return_type, params.as_slice(), &function.name.name, false);
+        let function_kind = match function.is_extern {
+            true => gccjit::FunctionType::Exported,
+            false => gccjit::FunctionType::Internal
+        };
+        let new_function = self.context.new_function(None, function_kind, return_type, params.as_slice(), &function.name.name, false);
         memory.functions.insert(function.name.name.clone(), new_function);
         let new_block = new_function.new_block(&format!("{}_block", function.name.name));
         self.parse_block(&function.block, new_block, memory);

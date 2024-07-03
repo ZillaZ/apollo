@@ -23,12 +23,14 @@ pub struct Scope {
 #[derive(Debug)]
 pub struct AstContext {
     pub functions: HashMap<String, Function>,
+    pub imported: Vec<Import>
 }
 
 impl AstContext {
     pub fn new() -> Self {
         Self {
             functions: HashMap::new(),
+            imported: Vec::new()
         }
     }
 }

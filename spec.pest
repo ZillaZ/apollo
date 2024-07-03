@@ -1,5 +1,8 @@
 WHITESPACE = _{ " " | NEWLINE }
 
+import         =  { "use" ~ (dyn | static) ~ name_str }
+dyn            =  { "dyn" }
+static         =  { "static" }
 name_str       = @{ (ASCII_ALPHA) ~ (ASCII_ALPHANUMERIC | "_")* }
 program        = _{ SOI ~ expr+ ~ EOI }
 char           =  { "'" ~ ASCII ~ "'" }
@@ -32,14 +35,15 @@ and            =  { "and" | "&&" }
 or             =  { "or" | "||" }
 operation      =  { atom ~ (binary_op ~ atom)* }
 overloaded_ops =  { add_to | sub_to | mul_to | div_to }
-expr           = _{ (overloaded_op | return | function | call | block | declaration | assignment | if) }
+expr           = _{ (import | overloaded_op | return | function | call | block | declaration | assignment | if) }
 declaration    =  { let ~ name ~ (dd ~ datatype)? ~ eq ~ value }
 assignment     =  { (array_access | name) ~ eq ~ value }
 value          =  { if | bool | array_access | array | operation | call | string_value | char | integer | float | name }
 call           =  { name ~ "(" ~ param? ~ (v ~ param)* ~ ")" ~ array_access? }
 param          =  { value | name }
 name           =  { !integer ~ (ref | deref)? ~ name_str }
-function       =  { fn ~ name ~ args ~ return_type? ~ block }
+function       =  { export? ~ fn ~ name ~ args ~ return_type? ~ block }
+export         =  { "export" }
 return_type    = _{ arrow ~ datatype }
 arrow          = _{ "->" }
 args           =  { "(" ~ arg* ~ ")" }
