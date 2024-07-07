@@ -2,15 +2,18 @@
 let
   overrides = (builtins.fromTOML (builtins.readFile ./rust-toolchain.toml));
   libPath = with pkgs; lib.makeLibraryPath [
-    # load external libraries that you need in your rust project here
+    glibc.out
   ];
+
 in
 pkgs.mkShell rec {
   buildInputs = with pkgs; [
     clang
-    # Replace llvmPackages with llvmPackages_X, where X is the latest LLVM version (at the time of writing, 16)
     llvmPackages.bintools
     rustup
+    gcc
+    libgccjit
+    libgcc
   ];
   RUSTC_VERSION = overrides.toolchain.channel;
   # https://github.com/rust-lang/rust-bindgen#environment-variables
@@ -24,6 +27,7 @@ pkgs.mkShell rec {
     # add libraries here (e.g. pkgs.libvmi)
   ]);
   LD_LIBRARY_PATH = libPath;
+  LIBRARY_PATH = libPath;
   # Add glibc, clang, glib, and other headers to bindgen search path
   BINDGEN_EXTRA_CLANG_ARGS =
     # Includes normal include path
@@ -36,5 +40,6 @@ pkgs.mkShell rec {
       ''-I"${pkgs.llvmPackages_latest.libclang.lib}/lib/clang/${pkgs.llvmPackages_latest.libclang.version}/include"''
       ''-I"${pkgs.glib.dev}/include/glib-2.0"''
       ''-I${pkgs.glib.out}/lib/glib-2.0/include/''
+    #  ''-I${pkgs.glibc.out}/lib''
     ];
 }
