@@ -17,20 +17,22 @@ pub enum FinalValue {
 #[derive(Clone, Debug)]
 pub struct Scope {
     pub variables: HashMap<String, Value>,
-    pub calls: HashMap<String, Vec<FinalValue>>
+    pub calls: HashMap<String, Vec<FinalValue>>,
 }
 
 #[derive(Debug)]
 pub struct AstContext {
     pub functions: HashMap<String, Function>,
-    pub imported: Vec<Import>
+    pub imported: Vec<Import>,
+    pub structs: HashMap<String, StructDecl>
 }
 
 impl AstContext {
     pub fn new() -> Self {
         Self {
             functions: HashMap::new(),
-            imported: Vec::new()
+            imported: Vec::new(),
+            structs: HashMap::new()
         }
     }
 }

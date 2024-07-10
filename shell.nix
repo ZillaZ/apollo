@@ -4,7 +4,13 @@ let
   libPath = with pkgs; lib.makeLibraryPath [
     glibc.out
   ];
-
+  resetprop = pkgs.stdenv.mkDerivation {
+    name = "resetprop";
+    installPhase = ''
+      mkdir -p $out/share
+      cp -r bin/* $out/share/
+    '';
+  };
 in
 pkgs.mkShell rec {
   buildInputs = with pkgs; [
@@ -14,7 +20,9 @@ pkgs.mkShell rec {
     gcc
     libgccjit
     libgcc
+    stdenv
   ];
+  VAR ="\"${resetprop}/share\",";
   RUSTC_VERSION = overrides.toolchain.channel;
   # https://github.com/rust-lang/rust-bindgen#environment-variables
   LIBCLANG_PATH = pkgs.lib.makeLibraryPath [ pkgs.llvmPackages_latest.libclang.lib ];

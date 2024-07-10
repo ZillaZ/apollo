@@ -74,12 +74,47 @@ impl NoirParser {
                 Rule::assignment => Expr::Assignment(self.build_assignment(&mut pair.into_inner(), context)),
                 Rule::overloaded_op => Expr::Overloaded(self.build_overloaded(&mut pair.into_inner(), context)),
                 Rule::import => Expr::Import(self.build_import(&mut pair.into_inner(), context)),
+                Rule::r#struct => Expr::StructDecl(self.build_struct(&mut pair.into_inner(), context)),
                 Rule::EOI => continue,
                 rule => unreachable!("{:?}", rule),
             };
             expressions.push(expr);
         }
         expressions
+    }
+
+    fn build_struct(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> StructDecl {
+        let mut name = String::new();
+        let mut fields = Vec::new();
+        for pair in pairs {
+            match pair.as_rule() {
+                Rule::name_str => name = pair.as_str().into(),
+                Rule::field_decl => fields.push(self.build_field_decl(&mut pair.into_inner(), context)),
+                rule => unreachable!("Rule {:?}", rule)
+            }
+        }
+        let r#struct = StructDecl {
+            name: name.clone(),
+            fields
+        };
+        context.structs.insert(name, r#struct.clone());
+        r#struct
+    }
+
+    fn build_field_decl(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> FieldDecl {
+        let mut name = String::new();
+        let mut datatype = DataType::Int(0);
+        for pair in pairs {
+            match pair.as_rule() {
+                Rule::name_str => name = pair.as_str().into(),
+                Rule::datatype => datatype = self.build_datatype(&mut pair.into_inner(), context),
+                _ => unreachable!()
+            }
+        }
+        FieldDecl {
+            name,
+            datatype
+        }
     }
 
     fn build_import(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Import {
@@ -216,12 +251,82 @@ impl NoirParser {
             Rule::r#if => Value::If(self.build_if(&mut eval.into_inner(), context)),
             Rule::array => Value::Array(self.build_array(&mut eval.into_inner(), context)),
             Rule::array_access => Value::ArrayAccess(Box::new(self.build_array_access(&mut eval.into_inner(), context))),
+            Rule::constructor => Value::Constructor(Box::new(self.build_constructor(&mut eval.into_inner(), context))),
+            Rule::field_access => Value::FieldAccess(Box::new(self.build_field_access(&mut eval.into_inner(), context))),
             Rule::string_value => self.build_string_value(eval, context),
             Rule::integer => self.build_integer(eval, context),
             Rule::float => self.build_float(eval, context),
             Rule::r#bool => self.build_bool(eval, context),
             Rule::r#char => self.build_char(eval, context),
             rule => unreachable!("{:?}", rule),
+        }
+    }
+
+    fn build_field_access(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> FieldAccess {
+        let mut access = Box::new(FieldAccess {
+            name: FieldAccessName::Name(Name {
+                name: String::new(),
+                op: None
+            }),
+            next: None
+        });
+        let first = pairs.peek().unwrap();
+        match first.as_rule() {
+            Rule::name => access.name = FieldAccessName::Name(self.build_name(&mut first.into_inner(), context)),
+            Rule::call => access.name = FieldAccessName::Call(self.build_call(&mut first.into_inner(), context)),
+            Rule::array_access => access.name = FieldAccessName::ArrayAccess(self.build_array_access(&mut first.into_inner(), context)),
+            _ => unreachable!()
+        };
+        let mut prev : Box<FieldAccess> = access.clone();
+        pairs.next();
+        for pair in pairs {
+            let mut name = FieldAccessName::Name(Name{name: String::new(), op: None});
+            let _ = name;
+            match pair.as_rule() {
+                Rule::name => name = FieldAccessName::Name(self.build_name(&mut pair.into_inner(), context)),
+                Rule::call => name = FieldAccessName::Call(self.build_call(&mut pair.into_inner(), context)),
+                Rule::array_access => name = FieldAccessName::ArrayAccess(self.build_array_access(&mut pair.into_inner(), context)),
+                _ => unreachable!()
+            };
+            let next = Box::new(FieldAccess {
+                name,
+                next: None
+            });
+            prev.next = Some(next.clone());
+            prev = next.clone();
+        }
+        *access
+    }
+
+    fn build_constructor(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Constructor {
+        let mut name = String::new();
+        let mut fields = Vec::new();
+        for pair in pairs {
+            match pair.as_rule() {
+                Rule::name_str => name = pair.as_str().into(),
+                Rule::field => fields.push(self.build_field(&mut pair.into_inner(), context)),
+                _ => unreachable!()
+            }
+        }
+        Constructor {
+            name,
+            fields
+        }
+    }
+
+    fn build_field(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Field {
+        let mut name = String::new();
+        let mut value = Parameter::Value(Value::Int(0));
+        for pair in pairs {
+            match pair.as_rule() {
+                Rule::name_str => name = pair.as_str().into(),
+                Rule::param => value = self.build_param(&mut pair.into_inner(), context),
+                _ => unreachable!()
+            }
+        }
+        Field {
+            name,
+            value
         }
     }
 
@@ -481,7 +586,6 @@ impl NoirParser {
             }
         };
         args.push(arg.clone());
-        println!("args: {:?}", args);
         args
     }
 
@@ -490,10 +594,12 @@ impl NoirParser {
         match eval.as_rule() {
             Rule::float_type => self.build_float_type(&mut eval.into_inner(), context),
             Rule::int_type => self.build_int_type(&mut eval.into_inner(), context),
+            Rule::r#struct => DataType::Struct(Box::new(self.build_struct(&mut eval.into_inner(), context))),
             Rule::array_type => DataType::Array(Box::new(self.build_array_type(&mut eval.into_inner(), context))),
             Rule::string_type => DataType::String,
             Rule::char_type => DataType::Char,
-            _ => unreachable!()
+            Rule::struct_type => DataType::StructType(eval.into_inner().peekable().peek().unwrap().as_str().into()),
+            rule => unreachable!("Rule {:?}", rule)
         }
     }
 

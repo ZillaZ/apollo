@@ -39,7 +39,9 @@ pub enum DataType {
     String,
     Array(Box<ArrayType>),
     Char,
-    Bool
+    Bool,
+    Struct(Box<StructDecl>),
+    StructType(String)
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -98,6 +100,43 @@ pub struct ArrayAccess {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct FieldDecl {
+    pub name: String,
+    pub datatype: DataType
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct StructDecl {
+    pub name: String,
+    pub fields: Vec<FieldDecl>
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum FieldAccessName {
+    Name(Name),
+    Call(Call),
+    ArrayAccess(ArrayAccess)
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct FieldAccess {
+    pub name: FieldAccessName,
+    pub next: Option<Box<FieldAccess>>
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Field {
+    pub name: String,
+    pub value: Parameter
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Constructor {
+    pub name: String,
+    pub fields: Vec<Field>
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum Value {
     Operation(Box<Operation>),
     Call(Call),
@@ -111,7 +150,9 @@ pub enum Value {
     If(If),
     Char(char),
     Array(Array),
-    ArrayAccess(Box<ArrayAccess>)
+    ArrayAccess(Box<ArrayAccess>),
+    Constructor(Box<Constructor>),
+    FieldAccess(Box<FieldAccess>)
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -210,7 +251,8 @@ pub enum Expr {
     If(If),
     Assignment(Assignment),
     Overloaded(Overloaded),
-    Import(Import)
+    Import(Import),
+    StructDecl(StructDecl)
 }
 
 impl Expr {
