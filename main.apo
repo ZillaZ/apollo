@@ -1,13 +1,7 @@
-struct Person {
-  name: string
-  age: i4
-}
-fn new_person(name: string, age: i4) -> Person {
-  return new Person {
-    name: name
-    age: age
-  }
-}
-let lucas = new_person("Lucas Henrique Santana Marcelino", 19)
-printf("%s is %d years old", lucas.name, lucas.age)
+use static array
+let array = new_array_with_capacity(100)
+array.push(53)
+printf("Array with len %d element at index zero is %d", array.len, array.elements[0])
+let pop = array.pop()
+printf("Array with len %d element at index zero is %d", array.len, array.elements[0])
 return 0

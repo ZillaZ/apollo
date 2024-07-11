@@ -1,0 +1,28 @@
+struct Array {
+  len: i4
+  capacity: i4
+  elements: array(i4)
+}
+
+fn new_array_with_capacity(capacity: i4) -> Array {
+  let elements = array(i4 capacity)[]
+  let array = new Array {
+    len: 0
+    capacity: capacity
+    elements: elements
+  }
+  return array
+}
+
+fn push(self: Array, element: i4) {
+  if self.len < self.capacity {
+    self.elements[self.len] = element
+    self.len += 1
+  }
+  return
+}
+
+fn pop(self: Array) -> i4 {
+  self.len -= 1
+  return self.elements[self.len]
+}

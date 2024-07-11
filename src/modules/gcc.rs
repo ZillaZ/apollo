@@ -6,7 +6,7 @@ use super::ast_context::AstContext;
 use super::structs::{self, AssignVar, Constructor, DataType, FieldAccessName, Name, Overloaded, OverloadedOp, RefOp, StructDecl, Value};
 use super::structs::Expr;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum GccValues<'a> {
     L(LValue<'a>),
     R(RValue<'a>),
@@ -55,7 +55,7 @@ pub struct Memory<'a> {
     pub functions: HashMap<String, Function<'a>>,
     pub builtins: Vec<String>,
     pub datatypes: HashMap<String, Type<'a>>,
-    pub constructors: HashMap<String, String>,
+    pub constructors: HashMap<String, HashMap<String, String>>,
     pub structs: HashMap<Struct<'a>, HashMap<String, i32>>,
     pub function_scope: String,
     pub anon_count: u32,
@@ -104,7 +104,7 @@ impl<'a> GccContext<'a> {
             match expr {
                 Expr::Return(ref rtn) =>  { self.build_return(rtn, block, reference); },
                 Expr::Call(ref call) => {
-                    let result = self.parse_call(call, block, reference).rvalue();
+                    let result = self.parse_call(call, None, block, reference).rvalue();
                     block.add_eval(None, result);
                 },
                 Expr::Function(ref function) => { self.parse_function(function, block, reference); },
@@ -114,6 +114,10 @@ impl<'a> GccContext<'a> {
                 Expr::Assignment(ref assignment) => { self.parse_assignment(assignment, block, reference); }
                 Expr::Overloaded(ref overloaded) => { self.parse_overloaded(overloaded, block, reference); }
                 Expr::StructDecl(ref r#struct) => { self.parse_struct(r#struct, block, reference); },
+                Expr::FieldAccess(ref access) => {
+                    let value = self.parse_field_access(access, None, block, &mut memory);
+                    block.add_eval(None, value.rvalue());
+                }
                 _ => continue
             }
         }
@@ -149,7 +153,7 @@ impl<'a> GccContext<'a> {
                 match expr {
                     Expr::Return(ref rtn) =>  { self.build_return(rtn, block, memory); },
                     Expr::Call(ref call) => {
-                        let result = self.parse_call(call, block, memory).rvalue();
+                        let result = self.parse_call(call, None, block, memory).rvalue();
                         block.add_eval(None, result);
                     },
                     Expr::Function(ref function) => { self.parse_function(function, block, memory); },
@@ -167,7 +171,10 @@ impl<'a> GccContext<'a> {
     }
 
     fn parse_overloaded(&'a self, overloaded: &Overloaded, block: Block<'a>, memory: &mut Memory<'a>) {
-        let lhs = self.parse_name(&overloaded.lhs, memory, block);
+        let lhs = match overloaded.lhs {
+            structs::OverloadedLHS::FieldAccess(ref access) => self.parse_field_access(access, None, block, memory),
+            structs::OverloadedLHS::Name(ref name) => self.parse_name(name, memory, block)
+        };
         let op = match overloaded.op {
             OverloadedOp::Add => BinaryOp::Plus,
             OverloadedOp::Sub => BinaryOp::Minus,
@@ -195,6 +202,14 @@ impl<'a> GccContext<'a> {
                     value = GccValues::R(self.context.new_cast(None, value.rvalue(), var.to_rvalue().get_type()));
                 }
                 block.add_assignment(None, var, value.rvalue());
+            },
+            AssignVar::FieldAccess(ref access) => {
+                let var = self.parse_field_access(access, None, block, memory).dereference();
+                let mut value = self.parse_value(&assignment.value, block, memory).rvalue();
+                if !var.to_rvalue().get_type().is_compatible_with(value.get_type()) {
+                    value = self.context.new_cast(None, value, var.to_rvalue().get_type());
+                }
+                block.add_assignment(None, var, value);
             }
         };
     }
@@ -235,7 +250,7 @@ impl<'a> GccContext<'a> {
             Value::Bool(boolean) => self.parse_bool(*boolean),
             Value::Atom(ref atom) => self.parse_atom(atom, block, memory),
             Value::Operation(operation) => self.parse_operation(operation, block, memory),
-            Value::Call(call) => self.parse_call(call, block, memory),
+            Value::Call(call) => self.parse_call(call, None, block, memory),
             Value::Block(ref ast_block) => {
                 let variables = memory.variables.get(&memory.function_scope).unwrap();
                 let args : Vec<(String, RValue<'a>)> = variables.iter().map(|x| (x.0.clone(), x.1.to_rvalue())).collect();
@@ -288,18 +303,33 @@ impl<'a> GccContext<'a> {
                         let struct_fields = memory.structs.get(&field).unwrap();
                         let field_index = struct_fields.get(&name.name).unwrap();
                         let field = field.get_field(*field_index);
-                        GccValues::R(val.rvalue().access_field(None, field))
+                        GccValues::L(val.dereference().access_field(None, field))
                     },
                     None => {
-                        let value = GccValues::R(memory.variables.get(&memory.function_scope).expect("scope not found").get(&name.name).expect("variable not found").to_rvalue());
-                        let helper = memory.constructors.get(&name.name).unwrap();
-                        memory.last_field = (value.clone(), Some(self.ast_context.structs.get(helper).unwrap().clone()));
+                        let value = GccValues::L(memory.variables.get(&memory.function_scope).expect("scope not found").get(&name.name).expect("variable not found").to_lvalue());
                         value
                     }
                 }
             },
-            FieldAccessName::Call(ref call) => self.parse_call(call, block, memory),
-            FieldAccessName::ArrayAccess(ref access) => self.parse_array_access(access, block, memory)
+            FieldAccessName::Call(ref call) => {
+                self.parse_call(call, aux.clone(), block, memory)
+            },
+            FieldAccessName::ArrayAccess(ref access) => {
+                match aux {
+                    Some(val) => {
+                        if let Value::Name(ref name) = access.value {
+                            let lvalue = self.parse_field_access_name(&FieldAccessName::Name(name.clone()), Some(val), block, memory);
+                            let index = self.parse_value(&access.index, block, memory);
+                            GccValues::L(self.context.new_array_access(None, lvalue.dereference(), index.rvalue()))
+                        }else{
+                            panic!("sexo 2 is realkkkk");
+                        }
+                    },
+                    None => {
+                        self.parse_array_access(access, block, memory)
+                    }
+                }
+            }
         }
     }
 
@@ -355,7 +385,7 @@ impl<'a> GccContext<'a> {
             match **expr {
                 Expr::Block(ref ast_block) => { self.parse_block(&Box::new(ast_block), new_block, memory); },
                 Expr::Call(ref call) => {
-                    let result = self.parse_call(call, new_block, memory).rvalue();
+                    let result = self.parse_call(call, None, new_block, memory).rvalue();
                     new_block.add_eval(None, result);
                 },
                 Expr::Declaration(ref declaration) => { self.parse_declaration(declaration, new_block, memory); },
@@ -475,13 +505,17 @@ impl<'a> GccContext<'a> {
     fn parse_declaration(&'a self, declaration: &structs::Declaration, block: Block<'a>, memory: &mut Memory<'a>) {
         match declaration.value {
             Value::Constructor(ref constructor) => {
-                memory.constructors.insert(declaration.name.name.clone(), constructor.name.clone());
+                let mut map = HashMap::new();
+                map.insert(declaration.name.name.clone(), constructor.name.clone());
+                memory.constructors.insert(memory.function_scope.clone(), map);
             },
             Value::Call(ref call) => {
                 if let Some(function) = self.ast_context.functions.get(&call.name.name) {
                     if let Some(ref function_return) = function.return_type {
                         if let DataType::StructType(ref name) = function_return {
-                            memory.constructors.insert(declaration.name.name.clone(), name.clone());
+                            let mut map = HashMap::new();
+                            map.insert(declaration.name.name.clone(), name.clone());
+                            memory.constructors.insert(memory.function_scope.clone(), map);
                         }
                     }
                 }
@@ -520,14 +554,18 @@ impl<'a> GccContext<'a> {
         params
     }
 
-    fn parse_call(&'a self, call: &structs::Call, block: Block<'a>, memory: &mut Memory<'a>) -> GccValues<'a> {
+    fn parse_call(&'a self, call: &structs::Call, field: Option<GccValues<'a>>, block: Block<'a>, memory: &mut Memory<'a>) -> GccValues<'a> {
         if !memory.functions.contains_key(&call.name.name) {
             self.parse_function(self.ast_context.functions.get(&call.name.name).unwrap(), block, memory);
         }
 
         let function = memory.functions.get(&call.name.name).unwrap().clone();
-        let mut args = self.parse_params(&call. args, block, memory).iter().map(|x| x.get_reference()).collect::<Vec<_>>();
-
+        let mut args = self.parse_params(&call.args, block, memory).iter().map(|x| x.rvalue()).collect::<Vec<_>>();
+        if let Some(field) = field {
+            let mut vec = vec![field.rvalue()];
+            vec.append(&mut args);
+            args = vec;
+        }
         for i in 0..args.len() {
             let param_count = function.get_param_count();
             if i < param_count {

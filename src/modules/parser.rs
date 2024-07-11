@@ -75,6 +75,7 @@ impl NoirParser {
                 Rule::overloaded_op => Expr::Overloaded(self.build_overloaded(&mut pair.into_inner(), context)),
                 Rule::import => Expr::Import(self.build_import(&mut pair.into_inner(), context)),
                 Rule::r#struct => Expr::StructDecl(self.build_struct(&mut pair.into_inner(), context)),
+                Rule::field_access => Expr::FieldAccess(self.build_field_access(&mut pair.into_inner(), context)),
                 Rule::EOI => continue,
                 rule => unreachable!("{:?}", rule),
             };
@@ -135,15 +136,16 @@ impl NoirParser {
     }
 
     fn build_overloaded(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Overloaded {
-        let mut lhs = Name {
+        let mut lhs = OverloadedLHS::Name(Name {
             name: String::new(),
             op: None
-        };
+        });
         let mut op = OverloadedOp::Add;
         let mut rhs = Value::Int(0);
         for pair in pairs {
             match pair.as_rule() {
-                Rule::name => lhs = self.build_name(&mut pair.into_inner(), context),
+                Rule::name => lhs = OverloadedLHS::Name(self.build_name(&mut pair.into_inner(), context)),
+                Rule::field_access => lhs = OverloadedLHS::FieldAccess(self.build_field_access(&mut pair.into_inner(), context)),
                 Rule::overloaded_ops => op = self.build_overloaded_op(&mut pair.into_inner(), context),
                 Rule::value => rhs = self.build_value(&mut pair.into_inner(), context),
                 _ => unreachable!()
@@ -177,6 +179,7 @@ impl NoirParser {
             match pair.as_rule() {
                 Rule::array_access => var = AssignVar::Access(self.build_array_access(&mut pair.into_inner(), context)),
                 Rule::name => var = AssignVar::Name(self.build_name(&mut pair.into_inner(), context)) ,
+                Rule::field_access => var = AssignVar::FieldAccess(self.build_field_access(&mut pair.into_inner(), context)),
                 Rule::value => value = self.build_value(&mut pair.into_inner(), context),
                 _ => unreachable!()
             }
@@ -261,41 +264,32 @@ impl NoirParser {
             rule => unreachable!("{:?}", rule),
         }
     }
-
     fn build_field_access(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> FieldAccess {
-        let mut access = Box::new(FieldAccess {
-            name: FieldAccessName::Name(Name {
-                name: String::new(),
-                op: None
-            }),
-            next: None
-        });
-        let first = pairs.peek().unwrap();
-        match first.as_rule() {
-            Rule::name => access.name = FieldAccessName::Name(self.build_name(&mut first.into_inner(), context)),
-            Rule::call => access.name = FieldAccessName::Call(self.build_call(&mut first.into_inner(), context)),
-            Rule::array_access => access.name = FieldAccessName::ArrayAccess(self.build_array_access(&mut first.into_inner(), context)),
-            _ => unreachable!()
-        };
-        let mut prev : Box<FieldAccess> = access.clone();
-        pairs.next();
+        let mut head: Option<Box<FieldAccess>> = None;
+        let mut prev = &mut head;
+
         for pair in pairs {
-            let mut name = FieldAccessName::Name(Name{name: String::new(), op: None});
-            let _ = name;
-            match pair.as_rule() {
-                Rule::name => name = FieldAccessName::Name(self.build_name(&mut pair.into_inner(), context)),
-                Rule::call => name = FieldAccessName::Call(self.build_call(&mut pair.into_inner(), context)),
-                Rule::array_access => name = FieldAccessName::ArrayAccess(self.build_array_access(&mut pair.into_inner(), context)),
-                _ => unreachable!()
+            let name = match pair.as_rule() {
+                Rule::name => FieldAccessName::Name(self.build_name(&mut pair.into_inner(), context)),
+                Rule::call => FieldAccessName::Call(self.build_call(&mut pair.into_inner(), context)),
+                Rule::array_access => FieldAccessName::ArrayAccess(self.build_array_access(&mut pair.into_inner(), context)),
+                _ => unreachable!(),
             };
             let next = Box::new(FieldAccess {
                 name,
-                next: None
+                next: None,
             });
-            prev.next = Some(next.clone());
-            prev = next.clone();
+            prev.replace(next.clone());
+            prev = &mut prev.as_mut().expect("prev is sus").next;
         }
-        *access
+
+        *head.unwrap_or_else(|| Box::new(FieldAccess {
+            name: FieldAccessName::Name(Name {
+                name: String::new(),
+                op: None,
+            }),
+            next: None,
+        }))
     }
 
     fn build_constructor(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Constructor {

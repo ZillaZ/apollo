@@ -78,7 +78,8 @@ pub enum Parameter {
 #[derive(Clone, Debug, PartialEq)]
 pub enum AssignVar {
     Name(Name),
-    Access(ArrayAccess)
+    Access(ArrayAccess),
+    FieldAccess(FieldAccess)
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -223,8 +224,14 @@ pub enum OverloadedOp {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub enum OverloadedLHS {
+    Name(Name),
+    FieldAccess(FieldAccess)
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct Overloaded {
-    pub lhs: Name,
+    pub lhs: OverloadedLHS,
     pub op: OverloadedOp,
     pub rhs: Value
 }
@@ -252,7 +259,8 @@ pub enum Expr {
     Assignment(Assignment),
     Overloaded(Overloaded),
     Import(Import),
-    StructDecl(StructDecl)
+    StructDecl(StructDecl),
+    FieldAccess(FieldAccess)
 }
 
 impl Expr {
