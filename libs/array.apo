@@ -14,7 +14,7 @@ fn new_array_with_capacity(capacity: i4) -> Array {
   return array
 }
 
-fn push(self: Array, element: i4) {
+fn push(self: &Array, element: i4) {
   if self.len < self.capacity {
     self.elements[self.len] = element
     self.len += 1

@@ -299,11 +299,19 @@ impl<'a> GccContext<'a> {
             FieldAccessName::Name(ref name) => {
                 match aux {
                     Some(val) => {
-                        let field = val.rvalue().get_type().is_struct().unwrap();
-                        let struct_fields = memory.structs.get(&field).unwrap();
-                        let field_index = struct_fields.get(&name.name).unwrap();
-                        let field = field.get_field(*field_index);
-                        GccValues::L(val.dereference().access_field(None, field))
+                        if let Some(field) = val.rvalue().get_type().is_struct() {
+                            let struct_fields = memory.structs.get(&field).unwrap();
+                            let field_index = struct_fields.get(&name.name).unwrap();
+                            let field = field.get_field(*field_index);
+                            GccValues::L(val.dereference().access_field(None, field))
+                        }else if let Some(field) = val.rvalue().dereference(None).to_rvalue().get_type().is_struct() {
+                            let struct_fields = memory.structs.get(&field).unwrap();
+                            let field_index = struct_fields.get(&name.name).unwrap();
+                            let field = field.get_field(*field_index);
+                            GccValues::L(val.dereference().to_rvalue().dereference(None).access_field(None, field))
+                        }else{
+                            panic!("xiiikk")
+                        }
                     },
                     None => {
                         let value = GccValues::L(memory.variables.get(&memory.function_scope).expect("scope not found").get(&name.name).expect("variable not found").to_lvalue());
@@ -439,7 +447,7 @@ impl<'a> GccContext<'a> {
     fn parse_args(&'a self, args: &Vec<structs::Arg>, memory: &mut Memory<'a>) -> Vec<Parameter> {
         let mut params = Vec::new();
         for arg in args {
-            let datatype = match arg.datatype {
+            let datatype = match arg.datatype.datatype {
                 DataType::Array(ref array_type) => {
                     let element_type = self.parse_datatype(&array_type.data_type, memory);
                     element_type.make_pointer()
@@ -452,9 +460,9 @@ impl<'a> GccContext<'a> {
         params
     }
 
-    fn parse_datatype(&'a self, datatype: &DataType, memory: &mut Memory<'a>) -> Type<'_> {
+    fn parse_datatype(&'a self, datatype: &structs::Type, memory: &mut Memory<'a>) -> Type<'_> {
         let string_type = self.context.new_string_literal("test").get_type();
-        match datatype {
+        let r#type = match &datatype.datatype {
             DataType::Bool => <bool as Typeable>::get_type(&self.context),
             DataType::Int(bytecount) => self.context.new_int_type(*bytecount as i32, true),
             DataType::UInt(bytecount) => self.context.new_int_type(*bytecount as i32, false),
@@ -464,9 +472,20 @@ impl<'a> GccContext<'a> {
             },
             DataType::String => string_type,
             DataType::Char => <char as Typeable>::get_type(&self.context),
-            DataType::StructType(ref name) => *memory.datatypes.get(name).unwrap(),
+            DataType::StructType(ref name) => {
+                *if let Some(val) = memory.datatypes.get(name) {
+                    val
+                }else{
+                    panic!("{name}")
+                }
+            }
             DataType::Float(_bytecount) => <f32 as Typeable>::get_type(&self.context),
             _ => unreachable!()
+        };
+        if datatype.is_ref {
+            r#type.make_pointer()
+        }else{
+            r#type
         }
     }
 
@@ -512,7 +531,7 @@ impl<'a> GccContext<'a> {
             Value::Call(ref call) => {
                 if let Some(function) = self.ast_context.functions.get(&call.name.name) {
                     if let Some(ref function_return) = function.return_type {
-                        if let DataType::StructType(ref name) = function_return {
+                        if let DataType::StructType(ref name) = function_return.datatype {
                             let mut map = HashMap::new();
                             map.insert(declaration.name.name.clone(), name.clone());
                             memory.constructors.insert(memory.function_scope.clone(), map);
@@ -562,7 +581,7 @@ impl<'a> GccContext<'a> {
         let function = memory.functions.get(&call.name.name).unwrap().clone();
         let mut args = self.parse_params(&call.args, block, memory).iter().map(|x| x.rvalue()).collect::<Vec<_>>();
         if let Some(field) = field {
-            let mut vec = vec![field.rvalue()];
+            let mut vec = vec![field.get_reference()];
             vec.append(&mut args);
             args = vec;
         }

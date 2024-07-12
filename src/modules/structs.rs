@@ -31,10 +31,24 @@ pub struct BinaryOp {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct Type {
+    pub is_ref: bool,
+    pub datatype: DataType
+}
+
+impl Default for Type {
+    fn default() -> Self {
+        Self {
+            is_ref: false,
+            datatype: DataType::Int(0)
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum DataType {
     Float(u8),
     Int(u8),
-    UFloat(u8),
     UInt(u8),
     String,
     Array(Box<ArrayType>),
@@ -47,7 +61,7 @@ pub enum DataType {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Arg {
     pub name: Name,
-    pub datatype: DataType,
+    pub datatype: Type,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -103,7 +117,7 @@ pub struct ArrayAccess {
 #[derive(Clone, Debug, PartialEq)]
 pub struct FieldDecl {
     pub name: String,
-    pub datatype: DataType
+    pub datatype: Type
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -159,7 +173,7 @@ pub enum Value {
 #[derive(Clone, Debug, PartialEq)]
 pub struct ArrayType {
     pub size: Value,
-    pub data_type: DataType
+    pub data_type: Type
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -184,14 +198,14 @@ pub struct Function {
     pub is_extern: bool,
     pub name: Name,
     pub args: Vec<Arg>,
-    pub return_type: Option<DataType>,
+    pub return_type: Option<Type>,
     pub block: Box<Block>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Declaration {
     pub name: Name,
-    pub datatype: Option<DataType>,
+    pub datatype: Option<Type>,
     pub value: Value,
 }
 

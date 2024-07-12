@@ -2,6 +2,6 @@ use static array
 let array = new_array_with_capacity(100)
 array.push(53)
 printf("Array with len %d element at index zero is %d", array.len, array.elements[0])
-let pop = array.pop()
-printf("Array with len %d element at index zero is %d", array.len, array.elements[0])
+let num = array.len
+printf("       %d", num)
 return 0

@@ -104,7 +104,10 @@ impl NoirParser {
 
     fn build_field_decl(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> FieldDecl {
         let mut name = String::new();
-        let mut datatype = DataType::Int(0);
+        let mut datatype = Type {
+            is_ref: false,
+            datatype: DataType::Int(0)
+        };
         for pair in pairs {
             match pair.as_rule() {
                 Rule::name_str => name = pair.as_str().into(),
@@ -350,7 +353,7 @@ impl NoirParser {
     fn build_array(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Array {
         let mut array_type = ArrayType {
             size: Value::Int(0),
-            data_type: DataType::Int(4)
+            data_type: Type::default()
         };
         let mut elements = Vec::new();
         for pair in pairs {
@@ -374,7 +377,7 @@ impl NoirParser {
 
     fn build_array_type(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> ArrayType {
         let mut size = Value::Int(0);
-        let mut data_type = DataType::Int(4);
+        let mut data_type = Type::default();
         for pair in pairs {
             match pair.as_rule() {
                 Rule::value => size = self.build_value(&mut pair.into_inner(), context),
@@ -569,7 +572,7 @@ impl NoirParser {
                 name: String::new(),
                 op: None
             },
-            datatype: DataType::Int(4)
+            datatype: Type::default()
         };
         for pair in pairs {
             match pair.as_rule() {
@@ -583,18 +586,31 @@ impl NoirParser {
         args
     }
 
-    fn build_datatype(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> DataType {
-        let eval = pairs.peek().unwrap();
-        match eval.as_rule() {
-            Rule::float_type => self.build_float_type(&mut eval.into_inner(), context),
-            Rule::int_type => self.build_int_type(&mut eval.into_inner(), context),
-            Rule::r#struct => DataType::Struct(Box::new(self.build_struct(&mut eval.into_inner(), context))),
-            Rule::array_type => DataType::Array(Box::new(self.build_array_type(&mut eval.into_inner(), context))),
-            Rule::string_type => DataType::String,
-            Rule::char_type => DataType::Char,
-            Rule::struct_type => DataType::StructType(eval.into_inner().peekable().peek().unwrap().as_str().into()),
-            rule => unreachable!("Rule {:?}", rule)
+    fn build_datatype(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Type {
+        let mut is_ref = false;
+        let mut datatype = DataType::Int(0);
+        for pair in pairs {
+            match pair.as_rule() {
+                Rule::float_type => datatype = self.build_float_type(&mut pair.into_inner(), context),
+                Rule::int_type => datatype = self.build_int_type(&mut pair.into_inner(), context),
+                Rule::r#struct => datatype = DataType::Struct(Box::new(self.build_struct(&mut pair.into_inner(), context))),
+                Rule::array_type => datatype = DataType::Array(Box::new(self.build_array_type(&mut pair.into_inner(), context))),
+                Rule::string_type => datatype = DataType::String,
+                Rule::char_type => datatype = DataType::Char,
+                Rule::struct_type => datatype = DataType::StructType(self.build_struct_type(&mut pair.into_inner(), context)),
+                Rule::r#ref => is_ref = true,
+                _ => unreachable!()
+            };
         }
+        Type {
+            is_ref,
+            datatype
+        }
+    }
+
+    fn build_struct_type(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> String {
+        let eval = pairs.peek().unwrap();
+        eval.as_str().into()
     }
 
     fn build_int_type(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> DataType {
@@ -615,16 +631,11 @@ impl NoirParser {
 
     fn build_float_type(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> DataType {
         let mut bytecount = 4;
-        let mut is_unsigned = false;
         for pair in pairs {
             match pair.as_rule() {
                 Rule::integer => bytecount = pair.as_str().parse().unwrap(),
-                Rule::unsigned => is_unsigned = true,
                 _ => unreachable!()
             }
-        }
-        if is_unsigned {
-            return DataType::UFloat(bytecount)
         }
         DataType::Float(bytecount)
     }
