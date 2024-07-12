@@ -26,3 +26,17 @@ fn pop(self: Array) -> i4 {
   self.len -= 1
   return self.elements[self.len]
 }
+
+fn contains(self: &Array, target: i4) -> bool {
+  return search(self, 0, target)
+}
+
+fn search(self: &Array, index: i4, target: i4) -> bool {
+  if index >= self.len {
+    return false
+  }
+  if self.elements[index] == target {
+    return true
+  }
+  return search(self, index+1, target)
+}

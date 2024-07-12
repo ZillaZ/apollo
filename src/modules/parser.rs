@@ -597,6 +597,7 @@ impl NoirParser {
                 Rule::array_type => datatype = DataType::Array(Box::new(self.build_array_type(&mut pair.into_inner(), context))),
                 Rule::string_type => datatype = DataType::String,
                 Rule::char_type => datatype = DataType::Char,
+                Rule::bool_type => datatype = DataType::Bool,
                 Rule::struct_type => datatype = DataType::StructType(self.build_struct_type(&mut pair.into_inner(), context)),
                 Rule::r#ref => is_ref = true,
                 _ => unreachable!()
