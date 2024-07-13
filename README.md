@@ -11,6 +11,7 @@ Apollo uses the GCC backend to generate bytecode. You need to have libgccjit on 
 - [Arrays](#arrays)
 - [Functions](#functions)
 - [Type Implementations](#implementations)
+- [Generic Types](#generics)
 
 # Primitives
 ```
@@ -43,7 +44,7 @@ let array = array(i4)[1 2 3]
 ```
 fn new_person(name: string, age: i4) -> Person {
   return new Person {
-    name: name,
+    name: name
     age: age
   }
 }
@@ -53,5 +54,23 @@ fn new_person(name: string, age: i4) -> Person {
 ```
 fn get_name(self: &Person) -> string {
   return self.name
+}
+```
+
+# Generics
+```
+trait Person {
+  name: string
+  age: i4
+}
+
+fn print_person(person: 'Person) {
+  printf("%s is %d years old", person.name, person.age)
+  return
+}
+
+struct Student {
+  #[Person]
+  class: string
 }
 ```
