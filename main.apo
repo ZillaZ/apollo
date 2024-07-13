@@ -1,6 +1,8 @@
 use static array
 let array = new_array_with_capacity(100)
-array.push(53)
-array.push(90)
-printf("%d %d %d", array.contains(53), array.contains(90), array.contains(9))
+let helper = new Helper {
+  value: 99
+}
+array.push(helper)
+printf("%d %d %d", array.contains(53), array.contains(99), array.contains(9))
 return 0

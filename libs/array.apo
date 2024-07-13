@@ -1,11 +1,27 @@
+struct Helper {
+  value: i4
+}
+
+fn get_value(self: &Helper) -> i4 {
+  return self.value
+}
+
 struct Array {
   len: i4
   capacity: i4
-  elements: array(i4)
+  elements: array(Helper)
+}
+
+fn push(self: &Array, element: Helper) {
+  if self.len < self.capacity {
+    self.elements[self.len] = element
+    self.len += 1
+  }
+  return
 }
 
 fn new_array_with_capacity(capacity: i4) -> Array {
-  let elements = array(i4 capacity)[]
+  let elements = array(Helper capacity)[]
   let array = new Array {
     len: 0
     capacity: capacity
@@ -14,29 +30,16 @@ fn new_array_with_capacity(capacity: i4) -> Array {
   return array
 }
 
-fn push(self: &Array, element: i4) {
-  if self.len < self.capacity {
-    self.elements[self.len] = element
-    self.len += 1
-  }
-  return
-}
-
-fn pop(self: Array) -> i4 {
-  self.len -= 1
-  return self.elements[self.len]
-}
-
 fn contains(self: &Array, target: i4) -> bool {
-  return search(self, 0, target)
+  return *self.search(0, target)
 }
 
 fn search(self: &Array, index: i4, target: i4) -> bool {
   if index >= self.len {
     return false
   }
-  if self.elements[index] == target {
+  if self.elements[index].get_value() == target {
     return true
   }
-  return search(self, index+1, target)
+  return *self.search(index+1, target)
 }

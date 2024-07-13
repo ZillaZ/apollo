@@ -96,7 +96,7 @@ impl NoirParser {
         }
         let r#struct = StructDecl {
             name: name.clone(),
-            fields
+            fields,
         };
         context.structs.insert(name, r#struct.clone());
         r#struct
@@ -461,7 +461,7 @@ impl NoirParser {
             block: Box::new(Block {
                 expr: Vec::new(),
                 box_return: None
-            })
+            }),
         };
         for pair in pairs.clone() {
             match pair.as_rule() {
@@ -475,6 +475,10 @@ impl NoirParser {
         }
         context.functions.insert(function.name.name.clone(), function.clone());
         function
+    }
+
+    fn build_generics(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Vec<String> {
+       pairs.into_iter().map(|x| x.as_str().to_string()).collect::<Vec<String>>()
     }
 
     fn build_atom(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Atom {
@@ -595,12 +599,13 @@ impl NoirParser {
                 Rule::int_type => datatype = self.build_int_type(&mut pair.into_inner(), context),
                 Rule::r#struct => datatype = DataType::Struct(Box::new(self.build_struct(&mut pair.into_inner(), context))),
                 Rule::array_type => datatype = DataType::Array(Box::new(self.build_array_type(&mut pair.into_inner(), context))),
+                Rule::struct_type => datatype = DataType::StructType(self.build_struct_type(&mut pair.into_inner(), context)),
                 Rule::string_type => datatype = DataType::String,
                 Rule::char_type => datatype = DataType::Char,
                 Rule::bool_type => datatype = DataType::Bool,
-                Rule::struct_type => datatype = DataType::StructType(self.build_struct_type(&mut pair.into_inner(), context)),
+                Rule::generic => datatype = DataType::Any,
                 Rule::r#ref => is_ref = true,
-                _ => unreachable!()
+                rule => unreachable!("Got rule {:?}", rule)
             };
         }
         Type {

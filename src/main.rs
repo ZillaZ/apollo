@@ -17,7 +17,7 @@ fn main() {
     let input = input.trim();
     let mut pairs: Pairs<Rule> = Program::parse(Rule::program, &input).unwrap();
     let mut ast = parser.gen_ast(&mut pairs);
-    println!("{:?}", ast.expressions);
+    println!("{:?}", ast.imports);
     let gcc = GccContext::new(ast.context);
     gcc.gen_bytecode(memory, &mut ast.expressions, &ast.imports);
 }
