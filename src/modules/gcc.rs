@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use gccjit::{BinaryOp, Block, ComparisonOp, Context, Function, LValue, Parameter, RValue, Struct, ToLValue, ToRValue, Type, Typeable, UnaryOp};
 
 use crate::modules::structs::{Field, Otherwise};
@@ -57,11 +57,11 @@ pub struct Memory<'a> {
     pub datatypes: HashMap<String, Type<'a>>,
     pub constructors: HashMap<String, HashMap<String, String>>,
     pub structs: HashMap<Struct<'a>, HashMap<String, i32>>,
-    pub generic_signatures: HashMap<Vec<Type<'a>>, Function<'a>>,
+    pub traits: HashMap<String, Vec<(String, Type<'a>)>>,
     pub type_implementations: HashMap<String, Function<'a>>,
     pub function_scope: String,
     pub anon_count: u32,
-    pub generic_structs: HashMap<Vec<gccjit::Field<'a>>, Struct<'a>>
+    pub trait_types: HashMap<Type<'a>, String>
 }
 
 impl <'a>Memory<'a> {
@@ -72,12 +72,12 @@ impl <'a>Memory<'a> {
         let datatypes = HashMap::new();
         let constructors = HashMap::new();
         let structs = HashMap::new();
-        let generic_signatures = HashMap::new();
+        let traits = HashMap::new();
         let type_implementations = HashMap::new();
         let function_scope = "main".into();
         let anon_count = 0;
-        let generic_structs = HashMap::new();
-        Self { variables, functions, builtins, datatypes, constructors, structs, generic_signatures, type_implementations, function_scope, anon_count, generic_structs }
+        let trait_types = HashMap::new();
+        Self { variables, functions, builtins, datatypes, constructors, structs, traits, type_implementations, function_scope, anon_count, trait_types }
     }
 }
 
@@ -119,9 +119,10 @@ impl<'a> GccContext<'a> {
                 Expr::Overloaded(ref overloaded) => { self.parse_overloaded(overloaded, block, reference); }
                 Expr::StructDecl(ref r#struct) => { self.parse_struct(r#struct, block, reference); },
                 Expr::FieldAccess(ref access) => {
-                    let value = self.parse_field_access(access, None, block, &mut memory);
+                    let value = self.parse_field_access(access, None, block, reference);
                     block.add_eval(None, value.rvalue());
                 }
+                Expr::Trait(ref r#trait) => self.parse_trait(r#trait, block, reference),
                 _ => continue
             }
         }
@@ -130,15 +131,40 @@ impl<'a> GccContext<'a> {
         self.context.compile_to_file(gccjit::OutputKind::DynamicLibrary, "apollo.so");
     }
 
-    fn parse_struct(&'a self, r#struct: &StructDecl, block: Block<'a>, memory: &mut Memory<'a>) {
-        if r#struct.has_generic() {
-            return
+    fn parse_trait(&'a self, r#trait: &structs::Trait, block: Block<'a>, memory: &mut Memory<'a>) {
+        let mut fields = Vec::new();
+        let mut struct_fields = Vec::new();
+        let mut counter = 0;
+        let mut new_struct = HashMap::new();
+        for field in r#trait.fields.iter() {
+            new_struct.insert(field.name.clone(), counter);
+            counter += 1;
+            let field_type = self.parse_datatype(&field.datatype.clone(), memory);
+            let struct_field = self.context.new_field(None, field_type, &field.name);
+            struct_fields.push(struct_field);
+            fields.push((field.name.clone(), field_type));
         }
+        let trait_type = self.context.new_struct_type(None, &r#trait.name, &struct_fields);
+        memory.datatypes.insert(r#trait.name.clone(), trait_type.as_type());
+        memory.structs.insert(trait_type, new_struct);
+        memory.trait_types.insert(trait_type.as_type(), r#trait.name.clone());
+        memory.traits.insert(r#trait.name.clone(), fields);
+    }
+
+    fn parse_struct(&'a self, r#struct: &StructDecl, block: Block<'a>, memory: &mut Memory<'a>) {
         let mut fields = Vec::new();
         let mut counter = 0;
         let mut new_struct = HashMap::new();
+        for r#trait in r#struct.traits.iter() {
+            let trait_fields = memory.traits.get(r#trait).unwrap();
+            for (field, datatype) in trait_fields.iter() {
+                new_struct.insert(field.clone(), counter);
+                let field = self.context.new_field(None, *datatype, field);
+                fields.push(field);
+                counter += 1;
+            }
+        }
         for field in r#struct.fields.iter() {
-            if field.datatype.datatype.is_any() {return}
             new_struct.insert(field.name.clone(), counter);
             counter += 1;
             let field_type = self.parse_datatype(&field.datatype.clone(), memory);
@@ -358,62 +384,13 @@ impl<'a> GccContext<'a> {
 
     fn parse_constructor(&'a self, constructor: &Constructor, block: Block<'a>, memory: &mut Memory<'a>) -> GccValues<'a> {
         let decl = self.ast_context.structs.get(&constructor.name).unwrap();
-        if !decl.has_generic() {
-            let mut fields = Vec::new();
-            let mut values = Vec::new();
-            for field in constructor.fields.iter() {
-                let value = self.parse_params(&vec![field.value.clone()], block, memory).first().unwrap().rvalue();
-                let mut bind = decl.fields.iter().filter(|x| x.name == field.name).peekable();
-                let field = bind.peek().unwrap();
-                let field = self.parse_field(field, block, memory);
-                fields.push(field);
-                values.push(value);
-            }
-            let struct_type = memory.datatypes.get(&constructor.name).unwrap();
-            GccValues::R(self.context.new_struct_constructor(None, *struct_type, None, values.as_slice()))
-        }else{
-            let mut fields = Vec::new();
-            let mut values = Vec::new();
-            for field in constructor.fields.iter() {
-                let value = self.parse_params(&vec![field.value.clone()], block, memory).first().unwrap().rvalue();
-                let mut bind = decl.fields.iter().filter(|x| x.name == field.name).peekable();
-                let field = bind.peek().unwrap();
-                let field = self.parse_field(field, block, memory);
-                fields.push(field);
-                values.push(value);
-            }
-            let struct_type = self.parse_generic_struct(constructor, &decl, &values, &fields, memory);
-            self.context.new_struct_constructor(None, struct_type.as_type(), None, &values);
-            todo!()
+        let mut values = Vec::new();
+        for field in constructor.fields.iter() {
+            let value = self.parse_params(&vec![field.value.clone()], block, memory).first().unwrap().rvalue();
+            values.push(value);
         }
-    }
-
-    fn parse_generic_struct(&'a self, constructor: &Constructor, r#struct: &StructDecl, values: &Vec<RValue<'a>>, fields: &Vec<gccjit::Field<'a>>, memory: &mut Memory<'a>) -> Struct<'a> {
-        let mut struct_fields = Vec::new();
-        for i in 0..constructor.fields.len() {
-            let field = fields[i];
-            let constructor_field = &constructor.fields[i];
-            let value = &values[i];
-            let mut struct_field = r#struct.fields.iter().filter(|x| x.name == constructor_field.name).peekable();
-            let struct_field = struct_field.peek().unwrap();
-            match struct_field.datatype.datatype {
-                DataType::Any => struct_fields.push(field),
-                _ => {
-                    let datatype = self.parse_datatype(&struct_field.datatype, memory);
-                    if !datatype.is_compatible_with(value.get_type()) {
-                        panic!("Incompatible struct and constructor types")
-                    }
-                    struct_fields.push(field);
-                }
-            };
-        }
-        if let Some(signature) = memory.generic_structs.get(&struct_fields) {
-            *signature
-        }else{
-            let signature = self.context.new_struct_type(None, &constructor.name, &struct_fields);
-            memory.generic_structs.insert(struct_fields, signature);
-            signature
-        }
+        let struct_type = memory.datatypes.get(&constructor.name).unwrap();
+        GccValues::R(self.context.new_struct_constructor(None, *struct_type, None, values.as_slice()))
     }
 
     fn parse_field(&'a self, field: &structs::FieldDecl, block: Block<'a>, memory: &mut Memory<'a>) -> gccjit::Field<'a> {
@@ -543,7 +520,7 @@ impl<'a> GccContext<'a> {
                 }
             }
             DataType::Float(_bytecount) => <f32 as Typeable>::get_type(&self.context),
-            DataType::Any => <() as Typeable>::get_type(&self.context),
+            DataType::Trait(ref name) => *memory.datatypes.get(name).unwrap(),
             _ => unreachable!()
         };
         if datatype.is_ref {
@@ -639,7 +616,6 @@ impl<'a> GccContext<'a> {
 
     fn parse_call(&'a self, call: &structs::Call, field: Option<GccValues<'a>>, block: Block<'a>, memory: &mut Memory<'a>) -> GccValues<'a> {
         if !memory.functions.contains_key(&call.name.name) && !memory.type_implementations.contains_key(&call.name.name) {
-            println!("{}", call.name.name);
             self.parse_function(self.ast_context.functions.get(&call.name.name).unwrap(), block, memory);
         }
         let function = match field {
@@ -653,16 +629,34 @@ impl<'a> GccContext<'a> {
             args = vec;
         }
         for i in 0..args.len() {
-            let param_count = function.get_param_count();
-            if i < param_count {
+            if function.get_param_count() <= i {
                 break
             }
             let declared_type = function.get_param(i as i32).to_rvalue().get_type();
+            let name = memory.trait_types.get_mut(&declared_type);
+            if name.is_some() {
+                let name = name.unwrap().clone();
+                args[i] = self.struct_to_trait(args[i], &name, declared_type, memory);
+            }
             if !declared_type.is_compatible_with(args[i].get_type()) {
                 args[i] = self.context.new_cast(None, args[i], declared_type);
             }
         }
         GccValues::R(self.context.new_call(None, function, &args))
+    }
+
+    fn struct_to_trait(&'a self, value: RValue<'a>, name: &String, declared_type: Type<'a>, memory: &mut Memory<'a>) -> RValue<'a> {
+        let struct_type = value.get_type().is_struct().unwrap();
+        let struct_fields = memory.structs.get(&struct_type).unwrap();
+        let trait_fields = memory.traits.get(name).unwrap();
+        let mut values = Vec::new();
+        for (name, index) in struct_fields.iter() {
+            if trait_fields.iter().map(|x| x.0.clone()).collect::<Vec<_>>().contains(name) {
+                let field = struct_type.get_field(*index);
+                values.push(value.access_field(None, field));
+            }
+        }
+        self.context.new_struct_constructor(None, declared_type, None, &values)
     }
 
     fn parse_operation(&'a self, operation: &Box<structs::Operation>, block: Block<'a>,memory: &mut Memory<'a>) -> GccValues<'a> {

@@ -1,4 +1,8 @@
-use gccjit::Typeable;
+#[derive(Clone, Debug, PartialEq)]
+pub struct Trait {
+    pub name: String,
+    pub fields: Vec<FieldDecl>
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Operations {
@@ -58,16 +62,7 @@ pub enum DataType {
     Bool,
     Struct(Box<StructDecl>),
     StructType(String),
-    Any
-}
-
-impl DataType {
-    pub fn is_any(&self) -> bool {
-        match self {
-            Self::Any => true,
-            _ => false
-        }
-    }
+    Trait(String)
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -136,17 +131,7 @@ pub struct FieldDecl {
 pub struct StructDecl {
     pub name: String,
     pub fields: Vec<FieldDecl>,
-}
-
-impl StructDecl {
-    pub fn has_generic(&self) -> bool {
-        for field in self.fields.iter() {
-            if field.datatype.datatype.is_any() {
-                return true
-            }
-        }
-        false
-    }
+    pub traits: Vec<String>
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -297,7 +282,8 @@ pub enum Expr {
     Overloaded(Overloaded),
     Import(Import),
     StructDecl(StructDecl),
-    FieldAccess(FieldAccess)
+    FieldAccess(FieldAccess),
+    Trait(Trait)
 }
 
 impl Expr {

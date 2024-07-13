@@ -1,8 +1,42 @@
-use static array
-let array = new_array_with_capacity(100)
-let helper = new Helper {
-  value: 99
+ trait Person {
+  name: string
+  age: i4
 }
-array.push(helper)
-printf("%d %d %d", array.contains(53), array.contains(99), array.contains(9))
+
+fn print_person(person: 'Person) {
+  printf("%s is %d years old", person.name, person.age)
+  return
+}
+
+struct Student {
+  #[Person]
+  class: string
+}
+
+fn new_student(name: string, age: i4, class: string) -> Student {
+  return new Student {
+    name: name
+    age: age
+    class: class
+  }
+}
+
+struct Developer {
+  #[Person]
+  main_language: string
+}
+
+fn new_developer(name: string, age: i4, main_language: string) -> Developer {
+  return new Developer {
+    name: name
+    age: age
+    main_language: main_language
+  }
+}
+
+let dev = new_developer("Lucas", 19, "Rust")
+let student = new_student("Ronilson", 40, "3A")
+
+print_person(dev)
+print_person(student)
 return 0

@@ -76,6 +76,7 @@ impl NoirParser {
                 Rule::import => Expr::Import(self.build_import(&mut pair.into_inner(), context)),
                 Rule::r#struct => Expr::StructDecl(self.build_struct(&mut pair.into_inner(), context)),
                 Rule::field_access => Expr::FieldAccess(self.build_field_access(&mut pair.into_inner(), context)),
+                Rule::r#trait => Expr::Trait(self.build_trait(&mut pair.into_inner(), context)),
                 Rule::EOI => continue,
                 rule => unreachable!("{:?}", rule),
             };
@@ -84,19 +85,38 @@ impl NoirParser {
         expressions
     }
 
-    fn build_struct(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> StructDecl {
+    fn build_trait(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Trait {
         let mut name = String::new();
         let mut fields = Vec::new();
         for pair in pairs {
             match pair.as_rule() {
                 Rule::name_str => name = pair.as_str().into(),
                 Rule::field_decl => fields.push(self.build_field_decl(&mut pair.into_inner(), context)),
+                _ => unreachable!()
+            }
+        }
+        Trait {
+            name,
+            fields
+        }
+    }
+
+    fn build_struct(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> StructDecl {
+        let mut name = String::new();
+        let mut fields = Vec::new();
+        let mut traits = Vec::new();
+        for pair in pairs {
+            match pair.as_rule() {
+                Rule::name_str => name = pair.as_str().into(),
+                Rule::field_decl => fields.push(self.build_field_decl(&mut pair.into_inner(), context)),
+                Rule::trait_field => traits.push(pair.as_str()[2..pair.as_str().len()-1].into()),
                 rule => unreachable!("Rule {:?}", rule)
             }
         }
         let r#struct = StructDecl {
             name: name.clone(),
             fields,
+            traits
         };
         context.structs.insert(name, r#struct.clone());
         r#struct
@@ -603,7 +623,7 @@ impl NoirParser {
                 Rule::string_type => datatype = DataType::String,
                 Rule::char_type => datatype = DataType::Char,
                 Rule::bool_type => datatype = DataType::Bool,
-                Rule::generic => datatype = DataType::Any,
+                Rule::trait_type => datatype = DataType::Trait(pair.as_str()[1..].into()),
                 Rule::r#ref => is_ref = true,
                 rule => unreachable!("Got rule {:?}", rule)
             };
