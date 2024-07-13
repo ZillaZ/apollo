@@ -56,13 +56,14 @@ pub enum DataType {
     Float(u8),
     Int(u8),
     UInt(u8),
-    String,
     Array(Box<ArrayType>),
-    Char,
-    Bool,
     Struct(Box<StructDecl>),
     StructType(String),
-    Trait(String)
+    Trait(String),
+    String,
+    Char,
+    Bool,
+    Any,
 }
 
 #[derive(Clone, Debug, PartialEq)]

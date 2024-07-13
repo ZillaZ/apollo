@@ -521,6 +521,7 @@ impl<'a> GccContext<'a> {
             }
             DataType::Float(_bytecount) => <f32 as Typeable>::get_type(&self.context),
             DataType::Trait(ref name) => *memory.datatypes.get(name).unwrap(),
+            DataType::Any => <() as Typeable>::get_type(&self.context).make_pointer(),
             _ => unreachable!()
         };
         if datatype.is_ref {
@@ -638,7 +639,7 @@ impl<'a> GccContext<'a> {
                 let name = name.unwrap().clone();
                 args[i] = self.struct_to_trait(args[i], &name, declared_type, memory);
             }
-            if !declared_type.is_compatible_with(args[i].get_type()) {
+             if !declared_type.is_compatible_with(args[i].get_type()){
                 args[i] = self.context.new_cast(None, args[i], declared_type);
             }
         }
@@ -650,8 +651,8 @@ impl<'a> GccContext<'a> {
         let struct_fields = memory.structs.get(&struct_type).unwrap();
         let trait_fields = memory.traits.get(name).unwrap();
         let mut values = Vec::new();
-        for (name, index) in struct_fields.iter() {
-            if trait_fields.iter().map(|x| x.0.clone()).collect::<Vec<_>>().contains(name) {
+        for (field, _) in trait_fields {
+            if let Some(index) = struct_fields.get(field) {
                 let field = struct_type.get_field(*index);
                 values.push(value.access_field(None, field));
             }

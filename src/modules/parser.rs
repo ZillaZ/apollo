@@ -624,6 +624,7 @@ impl NoirParser {
                 Rule::char_type => datatype = DataType::Char,
                 Rule::bool_type => datatype = DataType::Bool,
                 Rule::trait_type => datatype = DataType::Trait(pair.as_str()[1..].into()),
+                Rule::any_type => datatype = DataType::Any,
                 Rule::r#ref => is_ref = true,
                 rule => unreachable!("Got rule {:?}", rule)
             };

@@ -1,4 +1,5 @@
- trait Person {
+use static array
+trait Person {
   name: string
   age: i4
 }
@@ -36,6 +37,10 @@ fn new_developer(name: string, age: i4, main_language: string) -> Developer {
 
 let dev = new_developer("Lucas", 19, "Rust")
 let student = new_student("Ronilson", 40, "3A")
+let array = new_array_with_capacity(100)
+array.push(&dev)
+let access_dev : &Developer = array.elements[0]
+printf("%s", access_dev.name)
 
 print_person(dev)
 print_person(student)
