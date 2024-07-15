@@ -23,7 +23,7 @@ fn new_array_with_capacity(capacity: i4) -> Array {
 }
 
 fn contains(self: &Array, target: Any) -> bool {
-  return *self.search(0, target)
+  return self.search(0, target)
 }
 
 fn search(self: &Array, index: i4, target: Any) -> bool {

@@ -314,6 +314,17 @@ impl<'a> GccContext<'a> {
             Value::FieldAccess(ref access) => {
                 self.parse_field_access(access, None, block, memory)
             },
+            Value::Casting((ref value, ref target)) => {
+                let value = self.parse_value(&value, block, memory);
+                let target = memory.datatypes.get(target).unwrap();
+                GccValues::R(if value.rvalue().get_type().is_compatible_with(<() as Typeable>::get_type(&self.context).make_pointer()) {
+                    let target = target.make_pointer();
+                    let value = self.context.new_cast(None, value.rvalue(), target);
+                    value.dereference(None).to_rvalue()
+                }else{
+                    self.context.new_cast(None, value.rvalue(), *target).to_rvalue()
+                })
+            },
             _ => todo!()
         };
         
@@ -333,18 +344,23 @@ impl<'a> GccContext<'a> {
             FieldAccessName::Name(ref name) => {
                 match aux {
                     Some(val) => {
-                        if let Some(field) = val.rvalue().get_type().is_struct() {
+                        let value = if let Some(field) = val.rvalue().get_type().is_struct() {
                             let struct_fields = memory.structs.get(&field).unwrap();
                             let field_index = struct_fields.get(&name.name).unwrap();
                             let field = field.get_field(*field_index);
-                            GccValues::L(val.dereference().access_field(None, field))
+                            GccValues::R(val.rvalue().access_field(None, field))
                         }else if let Some(field) = val.rvalue().dereference(None).to_rvalue().get_type().is_struct() {
                             let struct_fields = memory.structs.get(&field).unwrap();
                             let field_index = struct_fields.get(&name.name).unwrap();
                             let field = field.get_field(*field_index);
-                            GccValues::L(val.dereference().to_rvalue().dereference(None).access_field(None, field))
+                            GccValues::L(val.rvalue().dereference(None).access_field(None, field))
                         }else{
                             panic!("xiiikk")
+                        };
+                        match name.op {
+                            Some(RefOp::Reference) => GccValues::R(value.get_reference()),
+                            Some(RefOp::Dereference) => GccValues::L(value.dereference()),
+                            None => value
                         }
                     },
                     None => {
@@ -369,7 +385,7 @@ impl<'a> GccContext<'a> {
                         if let Value::Name(ref name) = access.value {
                             let lvalue = self.parse_field_access_name(&FieldAccessName::Name(name.clone()), Some(val), block, memory);
                             let index = self.parse_value(&access.index, block, memory);
-                            GccValues::L(self.context.new_array_access(None, lvalue.dereference(), index.rvalue()))
+                            GccValues::L(self.context.new_array_access(None, lvalue.rvalue(), index.rvalue()))
                         }else{
                             panic!("sexo 2 is realkkkk");
                         }
@@ -623,27 +639,30 @@ impl<'a> GccContext<'a> {
             Some(ref _field) => memory.type_implementations.get(&call.name.name).unwrap().clone(),
             None => memory.functions.get(&call.name.name).unwrap().clone()
         };
-        let mut args = self.parse_params(&call.args, block, memory).iter().map(|x| x.rvalue()).collect::<Vec<_>>();
+        let mut args = self.parse_params(&call.args, block, memory);
         if let Some(field) = field {
-            let mut vec = vec![field.get_reference()];
+            let mut vec = vec![GccValues::R(field.get_reference())];
             vec.append(&mut args);
             args = vec;
         }
+        let mut params = args.iter().map(|x| x.rvalue()).collect::<Vec<_>>();
         for i in 0..args.len() {
             if function.get_param_count() <= i {
                 break
             }
             let declared_type = function.get_param(i as i32).to_rvalue().get_type();
             let name = memory.trait_types.get_mut(&declared_type);
+            params[i] = args[i].rvalue();
             if name.is_some() {
                 let name = name.unwrap().clone();
-                args[i] = self.struct_to_trait(args[i], &name, declared_type, memory);
-            }
-             if !declared_type.is_compatible_with(args[i].get_type()){
-                args[i] = self.context.new_cast(None, args[i], declared_type);
+                params[i] = self.struct_to_trait(args[i].rvalue(), &name, declared_type, memory);
+            }else if !declared_type.is_compatible_with(params[i].get_type()) && declared_type.is_compatible_with(<() as Typeable>::get_type(&self.context).make_pointer()) {
+                params[i] = self.context.new_cast(None, args[i].get_reference(), declared_type);
+            }else if !declared_type.is_compatible_with(params[i].get_type()){
+                params[i] = self.context.new_cast(None, params[i], declared_type);
             }
         }
-        GccValues::R(self.context.new_call(None, function, &args))
+        GccValues::R(self.context.new_call(None, function, &params))
     }
 
     fn struct_to_trait(&'a self, value: RValue<'a>, name: &String, declared_type: Type<'a>, memory: &mut Memory<'a>) -> RValue<'a> {
@@ -751,7 +770,7 @@ impl<'a> GccContext<'a> {
             Some(ref op) => {
                 return match op {
                     RefOp::Reference => GccValues::R(var.get_address(None)),
-                    RefOp::Dereference => GccValues::R(var.to_rvalue())
+                    RefOp::Dereference => GccValues::L(var.to_rvalue().dereference(None))
                 };
             },
             None => GccValues::R(var.to_rvalue())

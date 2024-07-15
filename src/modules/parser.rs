@@ -267,25 +267,29 @@ impl NoirParser {
     }
 
     fn build_value(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Value {
-        let eval = pairs.peek().unwrap();
-        match eval.as_rule() {
-            Rule::operation => Value::Operation(Box::new(self.build_operation(&mut eval.into_inner(), context))),
-            Rule::call => Value::Call(self.build_call(&mut eval.into_inner(), context)),
-            Rule::block => Value::Block(Box::new(self.build_block(&mut eval.into_inner(), context))),
-            Rule::name => Value::Name(self.build_name(&mut eval.into_inner(), context)),
-            Rule::atom => Value::Atom(Box::new(self.build_atom(&mut eval.into_inner(), context))),
-            Rule::r#if => Value::If(self.build_if(&mut eval.into_inner(), context)),
-            Rule::array => Value::Array(self.build_array(&mut eval.into_inner(), context)),
-            Rule::array_access => Value::ArrayAccess(Box::new(self.build_array_access(&mut eval.into_inner(), context))),
-            Rule::constructor => Value::Constructor(Box::new(self.build_constructor(&mut eval.into_inner(), context))),
-            Rule::field_access => Value::FieldAccess(Box::new(self.build_field_access(&mut eval.into_inner(), context))),
-            Rule::string_value => self.build_string_value(eval, context),
-            Rule::integer => self.build_integer(eval, context),
-            Rule::float => self.build_float(eval, context),
-            Rule::r#bool => self.build_bool(eval, context),
-            Rule::r#char => self.build_char(eval, context),
-            rule => unreachable!("{:?}", rule),
+        let mut value = Value::Int(0);
+        for eval in pairs {
+            match eval.as_rule() {
+                Rule::operation => value = Value::Operation(Box::new(self.build_operation(&mut eval.into_inner(), context))),
+                Rule::call => value = Value::Call(self.build_call(&mut eval.into_inner(), context)),
+                Rule::block => value = Value::Block(Box::new(self.build_block(&mut eval.into_inner(), context))),
+                Rule::name => value = Value::Name(self.build_name(&mut eval.into_inner(), context)),
+                Rule::atom => value = Value::Atom(Box::new(self.build_atom(&mut eval.into_inner(), context))),
+                Rule::r#if => value = Value::If(self.build_if(&mut eval.into_inner(), context)),
+                Rule::array => value = Value::Array(self.build_array(&mut eval.into_inner(), context)),
+                Rule::array_access => value = Value::ArrayAccess(Box::new(self.build_array_access(&mut eval.into_inner(), context))),
+                Rule::constructor => value = Value::Constructor(Box::new(self.build_constructor(&mut eval.into_inner(), context))),
+                Rule::field_access => value = Value::FieldAccess(Box::new(self.build_field_access(&mut eval.into_inner(), context))),
+                Rule::string_value => value = self.build_string_value(eval, context),
+                Rule::integer => value = self.build_integer(eval, context),
+                Rule::float => value = self.build_float(eval, context),
+                Rule::r#bool => value = self.build_bool(eval, context),
+                Rule::r#char => value = self.build_char(eval, context),
+                Rule::type_casting => value = Value::Casting((Box::new(value), eval.as_str()[3..].into())),
+                rule => unreachable!("{:?}", rule),
+            };
         }
+        value
     }
     fn build_field_access(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> FieldAccess {
         let mut head: Option<Box<FieldAccess>> = None;
@@ -296,7 +300,7 @@ impl NoirParser {
                 Rule::name => FieldAccessName::Name(self.build_name(&mut pair.into_inner(), context)),
                 Rule::call => FieldAccessName::Call(self.build_call(&mut pair.into_inner(), context)),
                 Rule::array_access => FieldAccessName::ArrayAccess(self.build_array_access(&mut pair.into_inner(), context)),
-                _ => unreachable!(),
+                rule => unreachable!("Found rule {:?}", rule),
             };
             let next = Box::new(FieldAccess {
                 name,

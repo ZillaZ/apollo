@@ -35,13 +35,17 @@ fn new_developer(name: string, age: i4, main_language: string) -> Developer {
   }
 }
 
+fn as_developer(element: Any) -> Developer {
+  let developer : &Developer = element
+  return *developer
+}
+
 let dev = new_developer("Lucas", 19, "Rust")
 let student = new_student("Ronilson", 40, "3A")
 let array = new_array_with_capacity(100)
 array.push(&dev)
-let access_dev : &Developer = array.elements[0]
-printf("%s", access_dev.name)
-
+printf("%s\n", as_developer(array.elements[0]).name)
 print_person(dev)
 print_person(student)
+
 return 0

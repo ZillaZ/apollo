@@ -1,84 +1,86 @@
 WHITESPACE = _{ " " | NEWLINE }
 
-import         =  { "use" ~ (dyn | static) ~ name_str }
-dyn            =  { "dyn" }
-static         =  { "static" }
-name_str       = @{ (ASCII_ALPHA) ~ (ASCII_ALPHANUMERIC | "_")* }
-generic_id     =  { ASCII_ALPHA }
-program        = _{ SOI ~ expr+ ~ EOI }
-char           =  { "'" ~ ASCII ~ "'" }
-array_type     =  { "array(" ~ datatype ~ value? ~ ")" }
-array          =  { array_type ~ "[" ~ value* ~ "]" }
-array_access   =  { (call | name) ~ "[" ~ value ~ "]" }
-string         = _{ (ASCII_ALPHANUMERIC | "." | "," | "%" | "\\" | "_" | "{" | "}" | "!")* }
-integer        = @{ ASCII_DIGIT+ }
-float          = @{ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ }
-binary_op      = _{ modulo | add | sub | mul | div | gte | gt | lte | lt | cmp_eq | neq | and | or }
-overloaded_op  =  { (field_access | name) ~ overloaded_ops ~ value }
-modulo         =  { "%" }
-add            =  { "+" }
-sub            =  { "-" }
-mul            =  { "*" }
-div            =  { "/" }
-add_to         =  { "+=" }
-sub_to         =  { "-=" }
-mul_to         =  { "*=" }
-div_to         =  { "/=" }
-dd             = _{ ":" }
-eq             = _{ "=" }
-gt             =  { ">" }
-lt             =  { "<" }
-lte            =  { "<=" }
-gte            =  { ">=" }
-cmp_eq         =  { "eq" | "==" }
-neq            =  { "not eq" | "!=" }
-and            =  { "and" | "&&" }
-or             =  { "or" | "||" }
-struct         =  { "struct" ~ name_str ~ "{" ~ (trait_field | field_decl)* ~ "}" }
-field_decl     =  { name_str ~ dd ~ datatype }
-operation      =  { atom ~ (binary_op ~ atom)* }
-overloaded_ops =  { add_to | sub_to | mul_to | div_to }
-expr           = _{ (trait | struct | import | overloaded_op | return | function | call | block | declaration | assignment | if | field_access) }
-declaration    =  { let ~ name ~ (dd ~ datatype)? ~ eq ~ value }
-assignment     =  { (array_access | field_access | name) ~ eq ~ value }
-value          =  { constructor | if | bool | call | array_access | field_access | array | operation | string_value | char | integer | float | name }
-call           =  { name ~ "(" ~ param? ~ (v ~ param)* ~ ")" ~ array_access? }
-param          =  { value | name }
-name           =  { !"if" ~ !integer ~ (ref | deref)? ~ name_str }
-function       =  { export? ~ fn ~ name ~ args ~ return_type? ~ block }
-export         =  { "export" }
-return_type    = _{ arrow ~ datatype }
-arrow          = _{ "->" }
-generic        =  { "Any" }
-args           =  { "(" ~ arg* ~ ")" }
-v              =  { "," }
-arg            = _{ name ~ dd ~ datatype ~ (v ~ name ~ dd ~ datatype)* }
-datatype       =  { ref? ~ (any_type | trait_type | array_type | float_type | int_type | string_type | char_type | bool_type | struct_type) }
-bool_type      =  { "bool" }
-struct_type    =  { name_str }
-int_type       =  { unsigned? ~ "i" ~ integer }
-char_type      =  { "char" }
-float_type     =  { "f" ~ integer }
-string_type    =  { "string" }
-string_value   =  { "\"" ~ string ~ "\"" }
-unsigned       =  { "u" }
-fn             = _{ "fn" }
-let            = _{ "let" }
-block          =  { "{" ~ expr* ~ return? ~ "}" }
-return         =  { "return" ~ value? }
-primary        =  { float | integer | bool | call | field_access | name | block | "(" ~ operation ~ ")" }
-unary_minus    =  { "-" }
-atom           =  { unary_minus? ~ primary }
-not            =  { "!" }
-if             =  { "if" ~ not? ~ operation ~ block ~ otherwise? }
-otherwise      =  { "else" ~ (block | if) }
-bool           =  { "true" | "false" }
-field          =  { name_str ~ dd ~ param }
-constructor    =  { "new" ~ name_str ~ "{" ~ field+ ~ "}" }
-ref            =  { "&" }
-deref          =  { "*" }
-field_access   =  { (array_access | call | name) ~ "." ~ (array_access | call | name) ~ ("." ~ (array_access | call | name))* }
-trait_field    =  { "#[" ~ name_str ~ "]" }
-trait          =  { "trait" ~ name_str ~ "{" ~ field_decl* ~ "}" }
-trait_type     =  { "'" ~ name_str }
-any_type       =  { "Any" }
+import              =  { "use" ~ (dyn | static) ~ name_str }
+dyn                 =  { "dyn" }
+static              =  { "static" }
+name_str            = @{ (ASCII_ALPHA) ~ (ASCII_ALPHANUMERIC | "_")* }
+generic_id          =  { ASCII_ALPHA }
+program             = _{ SOI ~ expr+ ~ EOI }
+char                =  { "'" ~ ASCII ~ "'" }
+array_type          =  { "array(" ~ datatype ~ value? ~ ")" }
+array               =  { array_type ~ "[" ~ value* ~ "]" }
+array_access        =  { (call | name) ~ "[" ~ value ~ "]" }
+string              = _{ (ASCII_ALPHANUMERIC | "." | "," | "%" | "\\" | "_" | "{" | "}" | "!")* }
+integer             = @{ ASCII_DIGIT+ }
+float               = @{ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ }
+binary_op           = _{ modulo | add | sub | mul | div | gte | gt | lte | lt | cmp_eq | neq | and | or }
+overloaded_op       =  { (field_access | name) ~ overloaded_ops ~ value }
+modulo              =  { "%" }
+add                 =  { "+" }
+sub                 =  { "-" }
+mul                 =  { "*" }
+div                 =  { "/" }
+add_to              =  { "+=" }
+sub_to              =  { "-=" }
+mul_to              =  { "*=" }
+div_to              =  { "/=" }
+dd                  = _{ ":" }
+eq                  = _{ "=" }
+gt                  =  { ">" }
+lt                  =  { "<" }
+lte                 =  { "<=" }
+gte                 =  { ">=" }
+cmp_eq              =  { "eq" | "==" }
+neq                 =  { "not eq" | "!=" }
+and                 =  { "and" | "&&" }
+or                  =  { "or" | "||" }
+struct              =  { "struct" ~ name_str ~ "{" ~ (trait_field | field_decl)* ~ "}" }
+field_decl          =  { name_str ~ dd ~ datatype }
+operation           =  { atom ~ (binary_op ~ atom)* }
+overloaded_ops      =  { add_to | sub_to | mul_to | div_to }
+expr                = _{ (trait | struct | import | overloaded_op | return | function | call | block | declaration | assignment | if | field_access) }
+declaration         =  { let ~ name ~ (dd ~ datatype)? ~ eq ~ value }
+assignment          =  { (array_access | field_access | name) ~ eq ~ value }
+value               =  { (constructor | if | bool | field_access | call | array_access | array | string_value | char | integer | float | operation | name) }
+call                =  { name ~ "(" ~ param? ~ (v ~ param)* ~ ")" ~ array_access? }
+param               =  { value | name }
+name                =  { !"if" ~ !integer ~ (ref | deref)? ~ name_str }
+function            =  { export? ~ fn ~ name ~ args ~ return_type? ~ block }
+export              =  { "export" }
+return_type         = _{ arrow ~ datatype }
+arrow               = _{ "->" }
+generic             =  { "Any" }
+args                =  { "(" ~ arg* ~ ")" }
+v                   =  { "," }
+arg                 = _{ name ~ dd ~ datatype ~ (v ~ name ~ dd ~ datatype)* }
+datatype            =  { ref? ~ (any_type | trait_type | array_type | float_type | int_type | string_type | char_type | bool_type | struct_type) }
+bool_type           =  { "bool" }
+struct_type         =  { name_str }
+int_type            =  { unsigned? ~ "i" ~ integer }
+char_type           =  { "char" }
+float_type          =  { "f" ~ integer }
+string_type         =  { "string" }
+string_value        =  { "\"" ~ string ~ "\"" }
+unsigned            =  { "u" }
+fn                  = _{ "fn" }
+let                 = _{ "let" }
+block               =  { "{" ~ expr* ~ return? ~ "}" }
+return              =  { "return" ~ value? }
+primary             =  { float | integer | bool | call | field_access | name | block | "(" ~ operation ~ ")" }
+unary_minus         =  { "-" }
+atom                =  { unary_minus? ~ primary }
+not                 =  { "!" }
+if                  =  { "if" ~ not? ~ operation ~ block ~ otherwise? }
+otherwise           =  { "else" ~ (block | if) }
+bool                =  { "true" | "false" }
+field               =  { name_str ~ dd ~ param }
+constructor         =  { "new" ~ name_str ~ "{" ~ field+ ~ "}" }
+ref                 =  { "&" }
+deref               =  { "*" }
+field_access        =  { field_access_helper ~ "." ~ field_access_helper ~ ("." ~ field_access_helper)* }
+field_access_helper = _{ array_access | call | name }
+trait_field         =  { "#[" ~ name_str ~ "]" }
+trait               =  { "trait" ~ name_str ~ "{" ~ field_decl* ~ "}" }
+trait_type          =  { "'" ~ name_str }
+any_type            =  { "Any" }
+type_casting        =  { "as" ~ name_str }
