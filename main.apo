@@ -5,7 +5,7 @@ trait Person {
 }
 
 fn print_person(person: 'Person) {
-  printf("%s is %d years old", person.name, person.age)
+  printf("%s is %d years old\n", person.name, person.age)
   return
 }
 
@@ -44,7 +44,6 @@ let dev = new_developer("Lucas", 19, "Rust")
 let student = new_student("Ronilson", 40, "3A")
 let array = new_array_with_capacity(100)
 array.push(&dev)
-printf("%s\n", as_developer(array.elements[0]).name)
 print_person(dev)
 print_person(student)
 

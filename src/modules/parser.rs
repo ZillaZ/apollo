@@ -556,7 +556,31 @@ impl NoirParser {
     }
 
     fn build_string_value(&self, pair: Pair<Rule>, context: &mut AstContext) -> Value {
-        Value::String(pair.as_str().into())
+        let mut literal = Vec::<String>::with_capacity(pair.as_str().len());
+        let iterator = pair.as_str().chars();
+        let mut escaping = false;
+        for c in iterator {
+            let mut repr = c.to_string();
+            if escaping {
+                match c {
+                    'n' => repr = "\n".to_string(),
+                    _ => ()
+                };
+                escaping = false;
+                literal.push(repr);
+            }else{
+                match c {
+                    '\\' => {
+                        escaping = true
+                    },
+                    _ => {
+                        literal.push(repr);
+                        escaping = false
+                    }
+                };
+            }
+        }
+        Value::String(literal.concat())
     }
 
     fn build_integer(&self, pair: Pair<Rule>, context: &mut AstContext) -> Value {
