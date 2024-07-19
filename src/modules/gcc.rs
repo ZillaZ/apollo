@@ -58,7 +58,6 @@ pub struct Memory<'a> {
     pub constructors: HashMap<String, HashMap<String, String>>,
     pub structs: HashMap<Struct<'a>, HashMap<String, i32>>,
     pub traits: HashMap<String, Vec<(String, Type<'a>)>>,
-    pub type_implementations: HashMap<String, Function<'a>>,
     pub function_scope: String,
     pub anon_count: u32,
     pub trait_types: HashMap<Type<'a>, String>
@@ -73,11 +72,10 @@ impl <'a>Memory<'a> {
         let constructors = HashMap::new();
         let structs = HashMap::new();
         let traits = HashMap::new();
-        let type_implementations = HashMap::new();
         let function_scope = "main".into();
         let anon_count = 0;
         let trait_types = HashMap::new();
-        Self { variables, functions, builtins, datatypes, constructors, structs, traits, type_implementations, function_scope, anon_count, trait_types }
+        Self { variables, functions, builtins, datatypes, constructors, structs, traits, function_scope, anon_count, trait_types }
     }
 }
 
@@ -490,11 +488,7 @@ impl<'a> GccContext<'a> {
             false => gccjit::FunctionType::Internal
         };
         let new_function = self.context.new_function(None, function_kind, return_type, params.as_slice(), &function.name.name, false);
-        if arg_map.contains_key("self") {
-            memory.type_implementations.insert(function.name.name.clone(), new_function);
-        }else{
-            memory.functions.insert(function.name.name.clone(), new_function);
-        }
+        memory.functions.insert(function.name.name.clone(), new_function);
         let new_block = new_function.new_block(&format!("{}_block", function.name.name));
         self.parse_block(&function.block, new_block, memory);
         memory.function_scope = aux;
@@ -632,16 +626,19 @@ impl<'a> GccContext<'a> {
     }
 
     fn parse_call(&'a self, call: &structs::Call, field: Option<GccValues<'a>>, block: Block<'a>, memory: &mut Memory<'a>) -> GccValues<'a> {
-        if !memory.functions.contains_key(&call.name.name) && !memory.type_implementations.contains_key(&call.name.name) {
+        if !memory.functions.contains_key(&call.name.name) {
             self.parse_function(self.ast_context.functions.get(&call.name.name).unwrap(), block, memory);
         }
-        let function = match field {
-            Some(ref _field) => memory.type_implementations.get(&call.name.name).unwrap().clone(),
-            None => memory.functions.get(&call.name.name).unwrap().clone()
-        };
+        let function = memory.functions.get(&call.name.name).unwrap().clone();
         let mut args = self.parse_params(&call.args, block, memory);
         if let Some(field) = field {
-            let mut vec = vec![GccValues::R(field.get_reference())];
+            let mut vec = Vec::new();
+            let param_datatype = self.ast_context.functions.get(&call.name.name).unwrap().args[0].clone();
+            if param_datatype.datatype.is_ref {
+                vec.push(GccValues::R(field.get_reference()));
+            }else{
+                vec.push(GccValues::R(field.rvalue()));
+            }
             vec.append(&mut args);
             args = vec;
         }

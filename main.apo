@@ -1,50 +1,11 @@
-use static array
-trait Person {
-  name: string
-  age: i4
-}
+let name = "Lucas"
 
-fn print_person(person: 'Person) {
-  printf("%s is %d years old\n", person.name, person.age)
+fn println(data: &string) {
+  printf("%s\n", *data)
   return
 }
 
-struct Student {
-  #[Person]
-  class: string
-}
-
-fn new_student(name: string, age: i4, class: string) -> Student {
-  return new Student {
-    name: name
-    age: age
-    class: class
-  }
-}
-
-struct Developer {
-  #[Person]
-  main_language: string
-}
-
-fn new_developer(name: string, age: i4, main_language: string) -> Developer {
-  return new Developer {
-    name: name
-    age: age
-    main_language: main_language
-  }
-}
-
-fn as_developer(element: Any) -> Developer {
-  let developer : &Developer = element
-  return *developer
-}
-
-let dev = new_developer("Lucas", 19, "Rust")
-let student = new_student("Ronilson", 40, "3A")
-let array = new_array_with_capacity(100)
-array.push(&dev)
-print_person(dev)
-print_person(student)
+println(&name)
+name.println()
 
 return 0
