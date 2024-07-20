@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use super::structs::*;
+use std::collections::HashMap;
 
 #[derive(Clone, Debug)]
 pub enum FinalValue {
@@ -24,7 +24,7 @@ pub struct Scope {
 pub struct AstContext {
     pub functions: HashMap<String, Function>,
     pub imported: Vec<Import>,
-    pub structs: HashMap<String, StructDecl>
+    pub structs: HashMap<String, StructDecl>,
 }
 
 impl AstContext {
@@ -32,7 +32,7 @@ impl AstContext {
         Self {
             functions: HashMap::new(),
             imported: Vec::new(),
-            structs: HashMap::new()
+            structs: HashMap::new(),
         }
     }
 }

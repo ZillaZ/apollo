@@ -1,7 +1,7 @@
 #[derive(Clone, Debug, PartialEq)]
 pub struct Trait {
     pub name: String,
-    pub fields: Vec<FieldDecl>
+    pub fields: Vec<FieldDecl>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -20,7 +20,7 @@ pub enum Operations {
     And,
     Or,
     Not,
-    Modulo
+    Modulo,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -39,14 +39,14 @@ pub struct BinaryOp {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Type {
     pub is_ref: bool,
-    pub datatype: DataType
+    pub datatype: DataType,
 }
 
 impl Default for Type {
     fn default() -> Self {
         Self {
             is_ref: false,
-            datatype: DataType::Int(0)
+            datatype: DataType::Int(0),
         }
     }
 }
@@ -82,13 +82,13 @@ pub enum Operation {
 #[derive(Clone, Debug, PartialEq)]
 pub enum RefOp {
     Reference,
-    Dereference
+    Dereference,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Name {
     pub name: String,
-    pub op: Option<RefOp>
+    pub op: Option<RefOp>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -101,13 +101,13 @@ pub enum Parameter {
 pub enum AssignVar {
     Name(Name),
     Access(ArrayAccess),
-    FieldAccess(FieldAccess)
+    FieldAccess(FieldAccess),
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Assignment {
     pub var: AssignVar,
-    pub value: Value
+    pub value: Value,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -119,45 +119,45 @@ pub struct Call {
 #[derive(Clone, Debug, PartialEq)]
 pub struct ArrayAccess {
     pub value: Value,
-    pub index: Value
+    pub index: Value,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct FieldDecl {
     pub name: String,
-    pub datatype: Type
+    pub datatype: Type,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct StructDecl {
     pub name: String,
     pub fields: Vec<FieldDecl>,
-    pub traits: Vec<String>
+    pub traits: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum FieldAccessName {
     Name(Name),
     Call(Call),
-    ArrayAccess(ArrayAccess)
+    ArrayAccess(ArrayAccess),
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct FieldAccess {
     pub name: FieldAccessName,
-    pub next: Option<Box<FieldAccess>>
+    pub next: Option<Box<FieldAccess>>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Field {
     pub name: String,
-    pub value: Parameter
+    pub value: Parameter,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Constructor {
     pub name: String,
-    pub fields: Vec<Field>
+    pub fields: Vec<Field>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -177,19 +177,19 @@ pub enum Value {
     Array(Array),
     ArrayAccess(Box<ArrayAccess>),
     Constructor(Box<Constructor>),
-    FieldAccess(Box<FieldAccess>)
+    FieldAccess(Box<FieldAccess>),
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ArrayType {
     pub size: Value,
-    pub data_type: Type
+    pub data_type: Type,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Array {
     pub array_type: Box<ArrayType>,
-    pub elements: Vec<Value>
+    pub elements: Vec<Value>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -222,13 +222,13 @@ pub struct Declaration {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Atom {
     pub is_neg: bool,
-    pub value: Value
+    pub value: Value,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Otherwise {
     Block(Block),
-    If(If)
+    If(If),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -236,7 +236,7 @@ pub struct If {
     pub not: bool,
     pub condition: Box<Operation>,
     pub block: Box<Block>,
-    pub otherwise: Option<Box<Otherwise>>
+    pub otherwise: Option<Box<Otherwise>>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -244,32 +244,32 @@ pub enum OverloadedOp {
     Add,
     Sub,
     Mul,
-    Div
+    Div,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum OverloadedLHS {
     Name(Name),
-    FieldAccess(FieldAccess)
+    FieldAccess(FieldAccess),
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Overloaded {
     pub lhs: OverloadedLHS,
     pub op: OverloadedOp,
-    pub rhs: Value
+    pub rhs: Value,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ImportKind {
     Dynamic,
-    Static
+    Static,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Import {
     pub kind: ImportKind,
-    pub name: String
+    pub name: String,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -285,14 +285,14 @@ pub enum Expr {
     Import(Import),
     StructDecl(StructDecl),
     FieldAccess(FieldAccess),
-    Trait(Trait)
+    Trait(Trait),
 }
 
 impl Expr {
     pub fn import(&self) -> Import {
         match self {
             Expr::Import(import) => import.clone(),
-            _ => panic!()
+            _ => panic!(),
         }
     }
 }

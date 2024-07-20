@@ -1,11 +1,26 @@
 let name = "Lucas"
 
-fn println(data: &string) {
-  printf("%s\n", *data)
-  return
+fn repeat_string(name: string, amount: i4) -> string {
+  let len : i4 = strnlen(name, 10000)
+  let size = (len * amount)
+  printf("Size is %d\n", size)
+  let buffer = array(char size)[]
+  fill(buffer, name, amount, 0)
+  return buffer
 }
 
-println(&name)
-name.println()
-
+fn fill(buffer: array(char), name: string, amount: i4, count: i4) {
+  if count >= amount {
+    return
+  }
+  let len_cast : i4 = strnlen(name, 10000)
+  let start = len_cast * count
+  memcpy(buffer[start], *name, len_cast)
+  fill(buffer, name, amount, count + 1)
+  return
+}
+let name = repeat_string(name, 150)
+printf("%s\n", name)
+let access : char = name[0]
+printf("%c\n", access)
 return 0
