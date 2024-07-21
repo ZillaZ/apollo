@@ -1,6 +1,6 @@
 # The Apollo programming language
 Still in early development.
-## This is just a personal project! Do not expect anything at production level
+### This is just a personal project! Do not expect anything at production level
 
 Apollo uses the GCC backend to generate bytecode. You need to have libgccjit on your machine to use the language.
 
@@ -10,10 +10,9 @@ Apollo uses the GCC backend to generate bytecode. You need to have libgccjit on 
 - [Structs](#structs)
 - [Arrays](#arrays)
 - [Functions](#functions)
-- [Type Implementations](#implementations)
 - [Generic Types](#generics)
 
-# Primitives
+### Primitives
 ```
 i1 i2 i4 i8
 f4
@@ -22,12 +21,12 @@ char
 bool
 ```
 
-# Variables
+### Variables
 ```
 let name = "Lucas"
 ```
 
-# Structs
+### Structs
 ```
 struct Person {
   name: string
@@ -35,12 +34,12 @@ struct Person {
 }
 ```
 
-# Arrays
+### Arrays
 ```
 let array = array(i4)[1 2 3]
 ```
 
-# Functions
+### Functions
 ```
 fn new_person(name: string, age: i4) -> Person {
   return new Person {
@@ -50,14 +49,7 @@ fn new_person(name: string, age: i4) -> Person {
 }
 ```
 
-# Implementations
-```
-fn get_name(self: &Person) -> string {
-  return self.name
-}
-```
-
-# Generics
+### Generics
 ```
 trait Person {
   name: string
@@ -74,3 +66,12 @@ struct Student {
   class: string
 }
 ```
+
+# Todo
+- Add dynamic libraries support
+- Comptime memory management
+- Add namespaces
+- Parallel computing support (Threads and Forks)
+- Sugar syntax for type casting
+- Improve operations parsing
+- Refactor the entire codebase (it is pretty ugly...)
