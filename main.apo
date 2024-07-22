@@ -1,9 +1,20 @@
-let fodase = "fodasekk"
-let other_var : string = "peniskkk"
-let penis = fodase
-penis = "kkj"
-printf("penis")
-fn sexo(isreal: bool) {
-  let lie = !isreal
-  return lie
+trait Person {
+  name: string
+  age: i4
 }
+
+struct Developer {
+  #[Person]
+  main_language: string
+}
+
+fn new_developer(name: string, age: i4, main_language: string) -> Developer {
+  return new Developer {
+    name: name
+    age: age
+    main_language: main_language
+  }
+}
+
+let developer = new_developer("Lucas", 19, "Rust")
+printf("%s\n", developer.name)
