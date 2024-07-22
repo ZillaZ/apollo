@@ -1,5 +1,8 @@
-use static std::array::{function/new_with_capacity struct/Array}
+use static std::array
 
 let array = new_with_capacity(100)
-array.elements[0] = "fodasekk"
-printf("At index 0 is %s", array.elements[0])
+let name = "Lucas"
+array.push(name)
+let deref : &string = array.elements[0]
+name = "Paulo"
+printf("At index 0 is %s", *deref)

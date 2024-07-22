@@ -1,7 +1,7 @@
 WHITESPACE = _{ " " | NEWLINE }
 
 index_access        = _{ "[" ~ value ~ "]" }
-import              =  { "use" ~ (dyn | static) ~ namespace ~ "::" ~ imported_fn? }
+import              =  { "use" ~ (dyn | static) ~ namespace ~ ("::" ~ imported_fn)? }
 dyn                 =  { "dyn" }
 static              =  { "static" }
 name_str            = @{ (ASCII_ALPHA) ~ (ASCII_ALPHANUMERIC | "_")* }
