@@ -12,7 +12,7 @@ fn push(self: &Array, element: Any) {
   return
 }
 
-fn new_array_with_capacity(capacity: i4) -> Array {
+fn new_with_capacity(capacity: i4) -> Array {
   let elements = array(Any capacity)[]
   let array = new Array {
     len: 0

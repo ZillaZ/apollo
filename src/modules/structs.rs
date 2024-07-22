@@ -260,16 +260,17 @@ pub struct Overloaded {
     pub rhs: Value,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum ImportKind {
     Dynamic,
     Static,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Import {
     pub kind: ImportKind,
     pub name: String,
+    pub imported: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

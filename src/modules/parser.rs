@@ -6,11 +6,13 @@ use pest::{
     iterators::{Pair, Pairs},
     pratt_parser::{Assoc, Op, PrattParser},
 };
+use std::collections::HashMap;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Ast {
+    pub namespace: String,
     pub expressions: Vec<Expr>,
-    pub imports: Vec<Vec<Expr>>,
+    pub imports: HashMap<Import, Box<Ast>>,
     pub context: AstContext,
 }
 
@@ -23,8 +25,8 @@ impl NoirParser {
         let pratt_parser = PrattParser::new()
             .op(Op::infix(Rule::add, Assoc::Left) | Op::infix(Rule::sub, Assoc::Left))
             .op(Op::infix(Rule::mul, Assoc::Left) | Op::infix(Rule::div, Assoc::Left))
-            .op(Op::infix(Rule::and, Assoc::Left)
-                | Op::infix(Rule::or, Assoc::Left)
+            .op(Op::infix(Rule::and, Assoc::Left))
+            .op(Op::infix(Rule::or, Assoc::Left)
                 | Op::infix(Rule::neq, Assoc::Left)
                 | Op::infix(Rule::gt, Assoc::Left)
                 | Op::infix(Rule::lt, Assoc::Left)
@@ -36,7 +38,8 @@ impl NoirParser {
         Self { pratt_parser }
     }
 
-    pub fn gen_ast(&self, pairs: &mut Pairs<Rule>) -> Ast {
+    pub fn gen_ast(&self, pairs: &mut Pairs<Rule>, namespace: String) -> Ast {
+        let namespace = namespace.split("::").last().unwrap().to_string();
         let mut context = AstContext::new();
         let expressions = self.build_expression(pairs, &mut context);
         let imports = expressions
@@ -50,23 +53,42 @@ impl NoirParser {
         let imports = self.load_imports(&imports, &mut context);
 
         Ast {
+            namespace,
             expressions,
             context,
             imports,
         }
     }
 
-    fn load_imports(&self, imports: &Vec<Import>, context: &mut AstContext) -> Vec<Vec<Expr>> {
-        let mut rtn = Vec::new();
+    fn load_imports(
+        &self,
+        imports: &Vec<Import>,
+        context: &mut AstContext,
+    ) -> HashMap<Import, Box<Ast>> {
+        let mut rtn = HashMap::new();
         for import in imports {
-            let libs_path = std::env::var("APOLLO_LIBS").unwrap();
-            let lib_path = format!("{}/{}.apo", libs_path, import.name);
+            let lib_path = self.parse_import_path(&import);
+            let lib_path = format!("{}.apo", lib_path);
+            println!("{lib_path}");
             let input = std::fs::read_to_string(lib_path).unwrap();
             let mut pairs: Pairs<Rule> = Program::parse(Rule::program, &input).unwrap();
-            let expr = self.build_expression(&mut pairs, context);
-            rtn.push(expr);
+            let ast = self.gen_ast(&mut pairs, import.name.clone());
+            rtn.insert(import.clone(), Box::new(ast));
         }
         rtn
+    }
+
+    fn parse_import_path(&self, import: &Import) -> String {
+        let names = import.name.split("::").collect::<Vec<_>>();
+        let mut final_path = Vec::new();
+        final_path.push(match names[0] {
+            "std" => std::env::var("APOLLO_LIBS").unwrap(),
+            _ => std::env::current_dir().unwrap().to_str().unwrap().into(),
+        });
+        for i in 1..names.len() {
+            final_path.push(names[i].to_string());
+        }
+        final_path.join("/")
     }
 
     fn build_expression(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Vec<Expr> {
@@ -163,17 +185,38 @@ impl NoirParser {
         let mut import = Import {
             kind: ImportKind::Static,
             name: String::new(),
+            imported: Vec::new(),
         };
         for pair in pairs {
             match pair.as_rule() {
                 Rule::r#static => import.kind = ImportKind::Static,
                 Rule::r#dyn => import.kind = ImportKind::Dynamic,
-                Rule::name_str => import.name = pair.as_str().trim().to_string(),
+                Rule::namespace => import.name = self.build_namespace(&mut pair.into_inner()),
+                Rule::imported_fn => {
+                    import.imported = self.build_imported_fn(&mut pair.into_inner())
+                }
                 _ => unreachable!(),
             }
         }
         context.imported.push(import.clone());
         import
+    }
+
+    fn build_imported_fn(&self, pairs: &mut Pairs<Rule>) -> Vec<String> {
+        let mut imports = Vec::new();
+        for pair in pairs {
+            let eval = pair.into_inner().map(|x| x.as_str().to_string()).collect::<Vec<_>>();
+            imports.push(eval.join("/"));
+        }
+        imports
+    }
+
+    fn build_namespace(&self, pairs: &mut Pairs<Rule>) -> String {
+        let mut vec = Vec::new();
+        for pair in pairs {
+            vec.push(pair.as_str().to_string());
+        }
+        vec.join("::")
     }
 
     fn build_overloaded(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Overloaded {
@@ -567,13 +610,6 @@ impl NoirParser {
             .functions
             .insert(function.name.name.clone(), function.clone());
         function
-    }
-
-    fn build_generics(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Vec<String> {
-        pairs
-            .into_iter()
-            .map(|x| x.as_str().to_string())
-            .collect::<Vec<String>>()
     }
 
     fn build_atom(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Atom {
