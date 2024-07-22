@@ -1,8 +1,9 @@
-use static std::array
-
-let array = new_with_capacity(100)
-let name = "Lucas"
-array.push(name)
-let deref : &string = array.elements[0]
-name = "Paulo"
-printf("At index 0 is %s", *deref)
+let fodase = "fodasekk"
+let other_var : string = "peniskkk"
+let penis = fodase
+penis = "kkj"
+printf("penis")
+fn sexo(isreal: bool) {
+  let lie = !isreal
+  return lie
+}
