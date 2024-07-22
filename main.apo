@@ -1,3 +1,5 @@
+use static std::collections::vector::{function/with_capacity struct/Array}
+
 trait Person {
   name: string
   age: i4
@@ -16,5 +18,5 @@ fn new_developer(name: string, age: i4, main_language: string) -> Developer {
   }
 }
 
-let developer = new_developer("Lucas", 19, "Rust")
+let vector::developer = new_developer("Lucas", 19, "Rust")
 printf("%s\n", developer.name)
