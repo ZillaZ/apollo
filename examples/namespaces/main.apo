@@ -1,0 +1,13 @@
+use static std::collections::vector::{struct/Vector function/new_with_capacity function/push function/pop}
+
+fn print_vector(vector: Vector) {
+    printf("Capacity: %d\nLenght: %d\n", vector.capacity, vector.len)
+    return
+}
+
+let list = new_with_capacity(100)
+list.print_vector()
+push(&list, "Element one")
+list.print_vector()
+printf("%s\n", pop(&list))
+list.print_vector()

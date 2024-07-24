@@ -1,0 +1,23 @@
+trait Person {
+  name: string
+  age: i4
+}
+
+fn print_person(person: 'Person) {
+    printf("%s is %d years old.\n", person.name, person.age)
+    return
+}
+
+struct Developer {
+  #[Person]
+  main_languages: array(string)
+}
+
+fn new_developer(name: string, age: i4, main_languages: array(string)) -> Developer {
+  return new Developer {
+        name: name age: age main_languages: main_languages
+  }
+}
+
+let developer = new_developer("Lucas", 19, array(string)["Rust" "Apollo"])
+developer.print_person()

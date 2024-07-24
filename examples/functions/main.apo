@@ -1,0 +1,6 @@
+fn double(number: i4) -> i4 {
+    return number * 2
+}
+let number = 15
+let result = double(number)
+printf("%d * 2 = %d\n", number, result)
