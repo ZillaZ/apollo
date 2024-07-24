@@ -11,6 +11,10 @@
 (defvar apollo-import nil "Apollo import.")
 (setq apollo-import "::\\(\\w\\|_\\)+")
 
+(defvar cap-test nil "Test.")
+(setq cap-test "[A-Z]")
+(setq cap-test (capitalize cap-test))
+
 (defvar apollo-imported nil "Apollo imported.")
 (setq apollo-imported "::{\\([[:space:]]*\\(\\w\\|_\\)+\/\\(\\w\\|_\\)+[[:space:]]*\\)+}\\|\\(?:::\\)\\(\\w\\|_\\)+\n")
 
@@ -20,8 +24,8 @@
 (defvar apollo-types nil "Apollo types.")
 (setq apollo-types '("f1" "f2" "f4" "f8" "i1" "i2" "i4" "i8" "string" "array" "bool"))
 
-(defvar apollo-return-types nil "Apollo return types.")
-(setq apollo-return-types "[[:space:]]+\\w+[[:space:]]*\{")
+(defvar apollo-custom-types nil "Apollo return types.")
+(setq apollo-custom-types (concat cap-test "\\w+"))
 
 (defvar apollo-functions nil "Apollo functions.")
 (setq apollo-functions "\\(\\w\\|_\\)+[[:space:]]*\(\\|\)")
@@ -33,7 +37,7 @@
         (setq xmodule-regex apollo-module)
         (setq ximported-regex apollo-imported)
         (setq ximport-regex apollo-import)
-        (setq xreturn-regex apollo-return-types)
+        (setq xreturn-regex apollo-custom-types)
         (setq xvarname-regex apollo-varname)
         (setq xkeywords-regex (regexp-opt apollo-keywords 'words))
         (setq xtypes-regex (regexp-opt apollo-types 'words))

@@ -240,6 +240,12 @@ pub struct If {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct Extension {
+    pub name: String,
+    pub body: String
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum OverloadedOp {
     Add,
     Sub,
@@ -287,6 +293,7 @@ pub enum Expr {
     StructDecl(StructDecl),
     FieldAccess(FieldAccess),
     Trait(Trait),
+    Extension(Extension)
 }
 
 impl Expr {

@@ -119,12 +119,28 @@ impl NoirParser {
                     Expr::FieldAccess(self.build_field_access(&mut pair.into_inner(), context))
                 }
                 Rule::r#trait => Expr::Trait(self.build_trait(&mut pair.into_inner(), context)),
+                Rule::compiler_extension => Expr::Extension(self.build_extension(&mut pair.into_inner(), context)),
                 Rule::EOI => continue,
                 rule => unreachable!("{:?}", rule),
             };
             expressions.push(expr);
         }
         expressions
+    }
+
+    fn build_extension(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Extension {
+        let mut rtn = Extension {
+            name: String::new(),
+            body: String::new(),
+        };
+        for pair in pairs {
+            match pair.as_rule() {
+                Rule::name_str => rtn.name = pair.as_str().into(),
+                Rule::string_value => rtn.body = pair.as_str().into(),
+                _ => unreachable!()
+            }
+        }
+        rtn
     }
 
     fn build_trait(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Trait {

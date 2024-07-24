@@ -12,6 +12,14 @@ fn push(self: &Array, element: Any) {
   return
 }
 
+fn pop(self: &Array) -> Any {
+  if self.len > 0 {
+    self.len -= 1
+    return self.elements[self.len]
+  }
+  return self.elements[self.len]
+}
+
 fn new_with_capacity(capacity: i4) -> Array {
   let elements = array(Any capacity)[]
   let array = new Array {
