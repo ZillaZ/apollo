@@ -9,8 +9,9 @@ Apollo uses the GCC backend to generate bytecode. You need to have libgccjit on 
 - [Variables](#variables)
 - [Structs](#structs)
 - [Arrays](#arrays)
-- [Functions](#functions)
-- [Traits](#traits)
+- [Functions](https://github.com/ZillaZ/apollo/blob/main/examples/functions/main.apo)
+- [Traits](https://github.com/ZillaZ/apollo/blob/main/examples/traits/main.apo)
+- [Namespaces](https://github.com/ZillaZ/apollo/tree/main/examples/namespaces)
 
 ### Primitives
 ```
@@ -37,34 +38,6 @@ struct Person {
 ### Arrays
 ```
 let array = array(i4)[1 2 3]
-```
-
-### Functions
-```
-fn new_person(name: string, age: i4) -> Person {
-  return new Person {
-    name: name
-    age: age
-  }
-}
-```
-
-### Traits
-```
-trait Person {
-  name: string
-  age: i4
-}
-
-fn print_person(person: 'Person) {
-  printf("%s is %d years old", person.name, person.age)
-  return
-}
-
-struct Student {
-  #[Person]
-  class: string
-}
 ```
 
 # Todo
