@@ -10,7 +10,7 @@ Apollo uses the GCC backend to generate bytecode. You need to have libgccjit on 
 - [Structs](#structs)
 - [Arrays](#arrays)
 - [Functions](#functions)
-- [Generic Types](#generics)
+- [Traits](#traits)
 
 ### Primitives
 ```
@@ -49,7 +49,7 @@ fn new_person(name: string, age: i4) -> Person {
 }
 ```
 
-### Generics
+### Traits
 ```
 trait Person {
   name: string
@@ -70,7 +70,6 @@ struct Student {
 # Todo
 - Add dynamic libraries support
 - Comptime memory management
-- Add namespaces
 - Parallel computing support (Threads and Forks)
 - Sugar syntax for type casting
 - Improve operations parsing
