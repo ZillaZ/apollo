@@ -301,6 +301,11 @@ pub enum OverloadedLHS {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct LibLink {
+    pub lib_name: String
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct Overloaded {
     pub lhs: OverloadedLHS,
     pub op: OverloadedOp,
@@ -334,7 +339,8 @@ pub enum Expr {
     StructDecl(StructDecl),
     FieldAccess(FieldAccess),
     Trait(Trait),
-    Extension(Extension)
+    Extension(Extension),
+    Link(LibLink)
 }
 
 impl Expr {

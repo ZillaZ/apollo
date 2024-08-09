@@ -7,7 +7,7 @@ use std::str::FromStr;
 
 use super::memory::Memory;
 use super::parser::Ast;
-use super::structs::{Expr, FunctionKind};
+use super::structs::{Expr, FunctionKind, LibLink};
 use super::structs::{
     self, AssignVar, Constructor, DataType, FieldAccessName, Name, Overloaded, OverloadedOp, RefOp,
     StructDecl, Value,
@@ -171,10 +171,14 @@ impl<'a> GccContext<'a> {
                     block.add_eval(None, value.rvalue());
                 }
                 Expr::Trait(ref r#trait) => self.parse_trait(r#trait, block, reference),
+                Expr::Link(ref lib_link) => self.add_link(lib_link),
                 _ => continue,
             }
         }
+    }
 
+    fn add_link(&'a self, lib_link: &LibLink) {
+        self.context.add_driver_option(format!("-l{}", lib_link.lib_name));
     }
 
     fn setup_entry_point(&'a self, ast: &Ast, memory: &mut Memory<'a>) -> Block<'a> {
@@ -194,7 +198,6 @@ impl<'a> GccContext<'a> {
     }
 
     fn compile_program(&'a self) {
-        self.context.add_driver_option("-lSDL2");
         self.context.set_program_name("apollo");
         self.context.dump_to_file("apollo.c", false);
         self.context

@@ -1,55 +1,5 @@
-use static std::collections::vector::{function/new_with_capacity function/pop function/push struct/Array}
-
-trait Person {
-  name: string
-  age: i4
-}
-
-fn print_person(person: 'Person) {
-  printf("%s is %d years old.\n", person.name, person.age)
-  return
-}
-
-struct Student {
-  #[Person]
-  classes: array(string)
-}
-
-fn new_student(name: string, age: i4, classes: array(string)) -> Student {
-  return new Student {
-    name: name age: age classes: classes
-  }
-}
-
-struct Developer {
-  #[Person]
-  main_language: string
-}
-
-fn new_developer(name: string, age: i4, main_language: string) -> Developer {
-  return new Developer {
-    name: name age: age main_language: main_language
-  }
-}
+link with SDL2
 
 extern fn SDL_CreateWindow(title: string, x: i4, y: i4, w: i4, h: i4, flags: i4) -> Any {}
-let window = SDL_CreateWindow("xerecakk", 0, 0, 800, 600, 0)
 
-let vector = new_with_capacity(100)
-let developer = new_developer("Lucas", 19, "Rust")
-vector.push(&developer)
-let cast : &Developer = vector.pop()
-let student = new_student("Paulo", 20, array(string)["Calculus I" "Algorithms"])
-print_person(student)
-let person : 'Person = student
-printf("Downcasting student and accessing its name... %s\n", &person[0])
-
-let field_count = field_count(person)
-
-printf("Struct student has %d fields\n", field_count)
-
-if !is_struct(student) {
-  printf("%s and %s have the same type\n", cast.name, student.name)
-}else{
-  printf("%s and %s does not have the same type\n", cast.name, student.name)
-}
+let window = SDL_CreateWindow("fodase", 0, 0, 800, 600, 0)

@@ -93,6 +93,7 @@ impl NoirParser {
 
     fn build_expression(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Vec<Expr> {
         let mut expressions = Vec::new();
+
         for pair in pairs {
             let expr = match pair.as_rule() {
                 Rule::r#return => Expr::Return(self.build_return(&mut pair.into_inner(), context)),
@@ -120,12 +121,22 @@ impl NoirParser {
                 }
                 Rule::r#trait => Expr::Trait(self.build_trait(&mut pair.into_inner(), context)),
                 Rule::compiler_extension => Expr::Extension(self.build_extension(&mut pair.into_inner(), context)),
+                Rule::lib_link => Expr::Link(self.build_link(&mut pair.into_inner())),
                 Rule::EOI => continue,
                 rule => unreachable!("{:?}", rule),
             };
             expressions.push(expr);
         }
+
         expressions
+    }
+
+    fn build_link(&self, pairs: &mut Pairs<Rule>) -> LibLink {
+        let mut eval = pairs.peekable();
+        let eval = eval.peek().unwrap();
+        LibLink {
+            lib_name: eval.as_str().trim().into()
+        }
     }
 
     fn build_extension(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Extension {
