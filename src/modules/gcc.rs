@@ -134,46 +134,7 @@ impl<'a> GccContext<'a> {
 
     }
 
-    fn get_char_type(&'a self) -> (Type<'a>, Type<'a>) {
-        let char_type = <char as Typeable>::get_type(&self.context);
-        (char_type.make_const(), char_type)
-    }
-
-    fn get_bool_type(&'a self) -> (Type<'a>, Type<'a>) {
-        let bool_type = <bool as Typeable>::get_type(&self.context);
-        (bool_type.make_const(), bool_type)
-    }
-
-    fn get_i32_type(&'a self) -> (Type<'a>, Type<'a>) {
-        let i32_type = <i32 as Typeable>::get_type(&self.context);
-        (i32_type.make_const(), i32_type)
-    }
-
-    pub fn build_primitives(&'a self, memory: &mut Memory<'a>) {
-        let primitives = &mut memory.primitive_types;
-        let (const_i32_type, i32_type) = self.get_i32_type();
-        let (const_bool_type, bool_type) = self.get_bool_type();
-        let (const_char_type, char_type) = self.get_char_type();
-        primitives.insert(const_i32_type, i32_type);
-        primitives.insert(const_bool_type, bool_type);
-        primitives.insert(const_char_type, char_type);
-    }
-
-    pub fn gen_bytecode(&'a self, ast: &Ast, memory: &mut Memory<'a>, should_compile: bool) {
-        self.add_builtin_functions(memory);
-        self.build_imports(memory, ast);
-        let dt = <i32 as Typeable>::get_type(&self.context);
-        memory.variables.insert("main".into(), HashMap::new());
-        let function = self.context.new_function(
-            None,
-            gccjit::FunctionType::Exported,
-            dt,
-            &[],
-            &ast.namespace,
-            false,
-        );
-        let mut block = function.new_block("initial");
-
+    fn parse_expression(&'a self, ast: &Ast, memory: &mut Memory<'a>, block: &mut Block<'a>) {
         for expr in ast.expressions.iter() {
             let reference = &mut *memory;
             match expr {
@@ -194,7 +155,7 @@ impl<'a> GccContext<'a> {
                     self.parse_declaration(declaration, block, reference, ast);
                 }
                 Expr::If(ref ast_if) => {
-                    block = self.parse_if(ast_if, block, reference, ast);
+                    *block = self.parse_if(ast_if, block, reference, ast);
                 }
                 Expr::Assignment(ref assignment) => {
                     self.parse_assignment(assignment, block, reference, ast);
@@ -213,21 +174,49 @@ impl<'a> GccContext<'a> {
                 _ => continue,
             }
         }
+
+    }
+
+    fn setup_entry_point(&'a self, ast: &Ast, memory: &mut Memory<'a>) -> Block<'a> {
+        self.add_builtin_functions(memory);
+        self.build_imports(memory, ast);
+        let dt = <i32 as Typeable>::get_type(&self.context);
+        memory.variables.insert("main".into(), HashMap::new());
+        let function = self.context.new_function(
+            None,
+            gccjit::FunctionType::Exported,
+            dt,
+            &[],
+            &ast.namespace,
+            false,
+        );
+        function.new_block("initial")
+    }
+
+    fn compile_program(&'a self) {
+        self.context.dump_to_file("apollo.c", false);
+        self.context
+            .compile_to_file(gccjit::OutputKind::Executable, "apollo");
+        self.context
+            .compile_to_file(gccjit::OutputKind::DynamicLibrary, "apollo.so");
+    }
+
+    pub fn gen_bytecode(&'a self, ast: &Ast, memory: &mut Memory<'a>, should_compile: bool) {
+        let mut block = self.setup_entry_point(ast, memory);
+        self.parse_expression(ast, memory, &mut block);
+
         block.end_with_return(
             None,
             self.context
                 .new_rvalue_from_int(<i32 as Typeable>::get_type(&self.context), 0),
         );
+
         if should_compile {
-            self.context.dump_to_file("apollo.c", false);
-            self.context
-                .compile_to_file(gccjit::OutputKind::Executable, "apollo");
-            self.context
-                .compile_to_file(gccjit::OutputKind::DynamicLibrary, "apollo.so");
+            self.compile_program();
         }
     }
 
-    fn parse_trait(&'a self, r#trait: &structs::Trait, block: Block<'a>, memory: &mut Memory<'a>) {
+    fn parse_trait(&'a self, r#trait: &structs::Trait, block: &mut Block<'a>, memory: &mut Memory<'a>) {
         let mut fields = Vec::new();
         let mut struct_fields = Vec::new();
         let mut counter = 0;
@@ -354,7 +343,7 @@ impl<'a> GccContext<'a> {
     fn parse_overloaded(
         &'a self,
         overloaded: &Overloaded,
-        block: Block<'a>,
+        block: &mut Block<'a>,
         memory: &mut Memory<'a>,
         ast: &Ast,
     ) {
@@ -377,7 +366,7 @@ impl<'a> GccContext<'a> {
     fn parse_assignment(
         &'a self,
         assignment: &structs::Assignment,
-        block: Block<'a>,
+        block: &mut Block<'a>,
         memory: &mut Memory<'a>,
         ast: &Ast,
     ) {
@@ -438,7 +427,7 @@ impl<'a> GccContext<'a> {
     fn build_return(
         &'a self,
         rtn: &structs::Return,
-        block: Block<'a>,
+        block: &mut Block<'a>,
         memory: &mut Memory<'a>,
         ast: &Ast,
     ) {
@@ -457,7 +446,7 @@ impl<'a> GccContext<'a> {
     fn parse_value(
         &'a self,
         value: &structs::Value,
-        block: Block<'a>,
+        block: &mut Block<'a>,
         memory: &mut Memory<'a>,
         ast: &Ast,
     ) -> GccValues<'a> {
@@ -497,9 +486,9 @@ impl<'a> GccContext<'a> {
                         &name,
                         false,
                     );
-                    let new_block = function.new_block("anon_block");
+                    let mut new_block = function.new_block("anon_block");
                     memory.functions.insert(name.clone(), function);
-                    self.parse_block(ast_block, new_block, memory, ast);
+                    self.parse_block(ast_block, &mut new_block, memory, ast);
                     GccValues::R(self.context.new_call(
                         None,
                         function,
@@ -548,7 +537,7 @@ impl<'a> GccContext<'a> {
         &'a self,
         access: &structs::FieldAccess,
         aux: Option<GccValues<'a>>,
-        block: Block<'a>,
+        block: &mut Block<'a>,
         memory: &mut Memory<'a>,
         ast: &Ast,
     ) -> GccValues<'a> {
@@ -563,7 +552,7 @@ impl<'a> GccContext<'a> {
         &'a self,
         name: &FieldAccessName,
         aux: Option<GccValues<'a>>,
-        block: Block<'a>,
+        block: &mut Block<'a>,
         memory: &mut Memory<'a>,
         ast: &Ast,
     ) -> GccValues<'a> {
@@ -641,7 +630,7 @@ impl<'a> GccContext<'a> {
     fn parse_constructor(
         &'a self,
         constructor: &Constructor,
-        block: Block<'a>,
+        block: &mut Block<'a>,
         memory: &mut Memory<'a>,
         ast: &Ast,
     ) -> GccValues<'a> {
@@ -667,7 +656,7 @@ impl<'a> GccContext<'a> {
     fn parse_field(
         &'a self,
         field: &structs::FieldDecl,
-        block: Block<'a>,
+        block: &mut Block<'a>,
         memory: &mut Memory<'a>,
     ) -> gccjit::Field<'a> {
         let datatype = self.parse_datatype(&field.datatype, memory);
@@ -684,7 +673,7 @@ impl<'a> GccContext<'a> {
     fn parse_array_access(
         &'a self,
         access: &structs::ArrayAccess,
-        block: Block<'a>,
+        block: &mut Block<'a>,
         memory: &mut Memory<'a>,
         ast: &Ast,
     ) -> GccValues<'a> {
@@ -696,7 +685,7 @@ impl<'a> GccContext<'a> {
     fn parse_array(
         &'a self,
         array: &structs::Array,
-        block: Block<'a>,
+        block: &mut Block<'a>,
         memory: &mut Memory<'a>,
         ast: &Ast,
     ) -> GccValues<'a> {
@@ -729,45 +718,13 @@ impl<'a> GccContext<'a> {
     fn parse_block(
         &'a self,
         ast_block: &structs::Block,
-        mut new_block: Block<'a>,
+        new_block: &mut Block<'a>,
         memory: &mut Memory<'a>,
         ast: &Ast,
     ) -> GccValues<'a> {
-        for expr in ast_block.expr.iter() {
-            match **expr {
-                Expr::Block(ref ast_block) => {
-                    self.parse_block(&Box::new(ast_block), new_block, memory, ast);
-                }
-                Expr::Call(ref call) => {
-                    let result = self.parse_call(call, None, new_block, memory, ast).rvalue();
-                    new_block.add_eval(None, result);
-                }
-                Expr::Declaration(ref declaration) => {
-                    self.parse_declaration(declaration, new_block, memory, ast);
-                }
-                Expr::Function(ref function) => {
-                    self.parse_function(function, memory, ast);
-                }
-                Expr::If(ref ast_if) => {
-                    new_block = self.parse_if(ast_if, new_block, memory, ast);
-                }
-                Expr::Assignment(ref assignment) => {
-                    self.parse_assignment(assignment, new_block, memory, ast);
-                }
-                Expr::Overloaded(ref overloaded) => {
-                    self.parse_overloaded(overloaded, new_block, memory, ast);
-                }
-                Expr::FieldAccess(ref access) => {
-                    self.parse_field_access(access, None, new_block, memory, ast);
-                }
-                _ => todo!(), //Expr::Return(ref ast_return) => { self.build_return(ast_return, new_block, memory); }
-            };
-        }
-        match &ast_block.box_return {
-            Some(ref rtn) => {
-                self.build_return(rtn, new_block, memory, ast);
-            }
-            None => (),
+        self.parse_expression(&ast_block.to_ast(), memory, new_block);
+        if let Some(ref rtn) = ast_block.box_return {
+            self.build_return(rtn, new_block, memory, ast);
         }
         GccValues::Nil
     }
@@ -820,8 +777,8 @@ impl<'a> GccContext<'a> {
         memory
             .functions
             .insert(function.name.name.clone(), new_function);
-        let new_block = new_function.new_block(&format!("{}_block", function.name.name));
-        self.parse_block(&function.block, new_block, memory, ast);
+        let mut new_block = new_function.new_block(&format!("{}_block", function.name.name));
+        self.parse_block(&function.block, &mut new_block, memory, ast);
         memory.function_scope = aux;
     }
 
@@ -875,7 +832,7 @@ impl<'a> GccContext<'a> {
     fn parse_if(
         &'a self,
         ast_if: &structs::If,
-        block: Block<'a>,
+        block: &mut Block<'a>,
         memory: &mut Memory<'a>,
         ast: &Ast,
     ) -> Block<'_> {
@@ -886,9 +843,9 @@ impl<'a> GccContext<'a> {
             condition = self.context.new_unary_op(None, UnaryOp::LogicalNegate, condition.get_type(), condition);
         }
         let function = block.get_function();
-        let then_block = function.new_block("then_block");
-        let else_block = function.new_block("else_block");
-        self.parse_block(&ast_if.block, then_block, memory, ast);
+        let mut then_block = function.new_block("then_block");
+        let mut else_block = function.new_block("else_block");
+        self.parse_block(&ast_if.block, &mut then_block, memory, ast);
         block.end_with_conditional(None, condition, then_block, else_block);
         let mut else_should_continue = false;
         let mut else_exists = false;
@@ -897,7 +854,7 @@ impl<'a> GccContext<'a> {
             match **otherwise {
                 Otherwise::Block(ref block) => {
                     else_should_continue = block.box_return.is_none();
-                    self.parse_block(block, else_block, memory, ast);
+                    self.parse_block(block, &mut else_block, memory, ast);
                 }
                 _ => unreachable!(),
             }
@@ -918,7 +875,7 @@ impl<'a> GccContext<'a> {
     fn parse_declaration(
         &'a self,
         declaration: &structs::Declaration,
-        block: Block<'a>,
+        block: &mut Block<'a>,
         memory: &mut Memory<'a>,
         ast: &Ast,
     ) {
@@ -967,7 +924,7 @@ impl<'a> GccContext<'a> {
     fn parse_params(
         &'a self,
         args: &Vec<structs::Parameter>,
-        block: Block<'a>,
+        block: &mut Block<'a>,
         memory: &mut Memory<'a>,
         ast: &Ast,
     ) -> Vec<GccValues<'_>> {
@@ -987,7 +944,7 @@ impl<'a> GccContext<'a> {
         &'a self,
         call: &structs::Call,
         field: Option<GccValues<'a>>,
-        block: Block<'a>,
+        block: &mut Block<'a>,
         memory: &mut Memory<'a>,
         ast: &Ast,
     ) -> GccValues<'a> {
@@ -1092,7 +1049,7 @@ impl<'a> GccContext<'a> {
     fn parse_operation(
         &'a self,
         operation: &Box<structs::Operation>,
-        block: Block<'a>,
+        block: &mut Block<'a>,
         memory: &mut Memory<'a>,
         ast: &Ast,
     ) -> GccValues<'a> {
@@ -1109,7 +1066,7 @@ impl<'a> GccContext<'a> {
     fn parse_binary_op(
         &'a self,
         binary_op: &structs::BinaryOp,
-        block: Block<'a>,
+        block: &mut Block<'a>,
         memory: &mut Memory<'a>,
         ast: &Ast,
     ) -> GccValues<'_> {
@@ -1144,7 +1101,7 @@ impl<'a> GccContext<'a> {
     fn parse_unary_op(
         &'a self,
         unary_op: &structs::UnaryOp,
-        block: Block<'a>,
+        block: &mut Block<'a>,
         memory: &mut Memory<'a>,
         ast: &Ast,
     ) -> GccValues<'_> {
@@ -1164,7 +1121,7 @@ impl<'a> GccContext<'a> {
     fn parse_atom(
         &'a self,
         atom: &structs::Atom,
-        block: Block<'a>,
+        block: &mut Block<'a>,
         memory: &mut Memory<'a>,
         ast: &Ast,
     ) -> GccValues<'_> {
@@ -1206,7 +1163,7 @@ impl<'a> GccContext<'a> {
         GccValues::R(self.context.new_rvalue_from_int(data_type, bit))
     }
 
-    fn parse_name(&self, name: &Name, memory: &mut Memory<'a>, block: Block<'_>) -> GccValues<'a> {
+    fn parse_name(&self, name: &Name, memory: &mut Memory<'a>, block: &mut Block<'a>) -> GccValues<'a> {
         let variables = memory.variables.get(&memory.function_scope).unwrap();
         if name.name[0..1] == name.name[0..1].to_uppercase() {
             let datatype = memory.datatypes.get(&name.name).expect("Refered datatype does not exist");

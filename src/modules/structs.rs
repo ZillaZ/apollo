@@ -1,3 +1,5 @@
+use super::{ast_context::AstContext, parser::Ast};
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Trait {
     pub name: String,
@@ -201,6 +203,17 @@ pub struct Return {
 pub struct Block {
     pub expr: Vec<Box<Expr>>,
     pub box_return: Option<Return>,
+}
+
+impl Block {
+    pub fn to_ast(&self) -> Ast {
+        Ast {
+            namespace: "nil".into(),
+            expressions: self.expr.iter().map(|x| *x.clone()).collect::<Vec<_>>(),
+            imports: std::collections::HashMap::new(),
+            context: AstContext::new()
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]

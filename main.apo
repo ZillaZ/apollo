@@ -40,8 +40,11 @@ let student = new_student("Paulo", 20, array(string)["Calculus I" "Algorithms"])
 print_person(student)
 let person : 'Person = student
 printf("Downcasting student and accessing its name... %s\n", &person[0])
+
 let field_count = field_count(person)
+
 printf("Struct student has %d fields\n", field_count)
+
 if !is_struct(student) {
   printf("%s and %s have the same type\n", cast.name, student.name)
 }else{
