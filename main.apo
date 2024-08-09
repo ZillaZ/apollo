@@ -32,6 +32,9 @@ fn new_developer(name: string, age: i4, main_language: string) -> Developer {
   }
 }
 
+extern fn SDL_CreateWindow(title: string, x: i4, y: i4, w: i4, h: i4, flags: i4) -> Any {}
+let window = SDL_CreateWindow("xerecakk", 0, 0, 800, 600, 0)
+
 let vector = new_with_capacity(100)
 let developer = new_developer("Lucas", 19, "Rust")
 vector.push(&developer)

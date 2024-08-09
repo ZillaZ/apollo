@@ -217,8 +217,36 @@ impl Block {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub enum FunctionKind {
+    Exported,
+    External,
+    Native
+}
+
+impl FunctionKind {
+    pub fn from_str(expr: &str) -> Self {
+        match expr {
+            "extern" => FunctionKind::External,
+            "export" => FunctionKind::Exported,
+            _ => unreachable!()
+        }
+    }
+
+    pub fn to_gcc_type(&self) -> gccjit::FunctionType {
+        use self::FunctionKind::*;
+        use gccjit::FunctionType;
+        match self {
+            Exported => FunctionType::Exported,
+            External => FunctionType::Extern,
+            Native => FunctionType::Internal,
+            _ => unreachable!()
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct Function {
-    pub is_extern: bool,
+    pub kind: FunctionKind,
     pub name: Name,
     pub args: Vec<Arg>,
     pub return_type: Option<Type>,

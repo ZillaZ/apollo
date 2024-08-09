@@ -595,7 +595,7 @@ impl NoirParser {
 
     fn build_function(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Function {
         let mut function = Function {
-            is_extern: false,
+            kind: FunctionKind::Native,
             name: Name {
                 name: String::new(),
                 op: None,
@@ -609,7 +609,7 @@ impl NoirParser {
         };
         for pair in pairs.clone() {
             match pair.as_rule() {
-                Rule::export => function.is_extern = true,
+                Rule::function_kind => function.kind = self.build_function_kind(&pair, context),
                 Rule::name => function.name = self.build_name(&mut pair.into_inner(), context),
                 Rule::args => function.args = self.build_args(&mut pair.into_inner(), context),
                 Rule::datatype => {
@@ -626,6 +626,10 @@ impl NoirParser {
             .functions
             .insert(function.name.name.clone(), function.clone());
         function
+    }
+
+    fn build_function_kind(&self, pair: &Pair<Rule>, context: &mut AstContext) -> FunctionKind {
+        FunctionKind::from_str(pair.as_str())
     }
 
     fn build_atom(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Atom {

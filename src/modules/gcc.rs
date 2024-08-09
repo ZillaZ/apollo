@@ -7,7 +7,7 @@ use std::str::FromStr;
 
 use super::memory::Memory;
 use super::parser::Ast;
-use super::structs::Expr;
+use super::structs::{Expr, FunctionKind};
 use super::structs::{
     self, AssignVar, Constructor, DataType, FieldAccessName, Name, Overloaded, OverloadedOp, RefOp,
     StructDecl, Value,
@@ -194,6 +194,8 @@ impl<'a> GccContext<'a> {
     }
 
     fn compile_program(&'a self) {
+        self.context.add_driver_option("-lSDL2");
+        self.context.set_program_name("apollo");
         self.context.dump_to_file("apollo.c", false);
         self.context
             .compile_to_file(gccjit::OutputKind::Executable, "apollo");
@@ -751,7 +753,7 @@ impl<'a> GccContext<'a> {
         params
     }
 
-    fn parse_function(&'a self, function: &structs::Function, memory: &mut Memory<'a>, ast: &Ast) {
+    fn parse_native_function(&'a self, function: &structs::Function, memory: &mut Memory<'a>, ast: &Ast) {
         if memory.functions.contains_key(&function.name.name) {
             return;
         }
@@ -761,10 +763,7 @@ impl<'a> GccContext<'a> {
         };
         let aux = memory.function_scope.clone();
         memory.function_scope = function.name.name.clone();
-        let function_kind = match function.is_extern {
-            true => gccjit::FunctionType::Exported,
-            false => gccjit::FunctionType::Internal,
-        };
+        let function_kind = function.kind.to_gcc_type();
         let params = self.setup_function_args(function, memory);
         let new_function = self.context.new_function(
             None,
@@ -780,6 +779,36 @@ impl<'a> GccContext<'a> {
         let mut new_block = new_function.new_block(&format!("{}_block", function.name.name));
         self.parse_block(&function.block, &mut new_block, memory, ast);
         memory.function_scope = aux;
+    }
+
+    fn parse_external_function(&'a self, function: &structs::Function, memory: &mut Memory<'a>) {
+        if memory.functions.contains_key(&function.name.name) {
+            return;
+        }
+        let return_type = match function.return_type {
+            Some(ref data_type) => self.parse_datatype(data_type, memory),
+            None => <() as Typeable>::get_type(&self.context),
+        };
+        let function_kind = function.kind.to_gcc_type();
+        let params = self.setup_function_args(function, memory);
+        let new_function = self.context.new_function(
+            None,
+            function_kind,
+            return_type,
+            params.as_slice(),
+            &function.name.name,
+            false,
+        );
+        memory
+            .functions
+            .insert(function.name.name.clone(), new_function);
+    }
+
+    fn parse_function(&'a self, function: &structs::Function, memory: &mut Memory<'a>, ast: &Ast) {
+        match function.kind {
+            FunctionKind::Native | FunctionKind::Exported => self.parse_native_function(function, memory, ast),
+            FunctionKind::External => self.parse_external_function(function, memory)
+        }
     }
 
     fn parse_args(&'a self, args: &Vec<structs::Arg>, memory: &mut Memory<'a>) -> Vec<Parameter> {
