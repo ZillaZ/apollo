@@ -774,7 +774,9 @@ impl NoirParser {
                 rule => unreachable!("{:?}", rule),
             }
         }
-        args.push(arg.clone());
+        if arg.name.name.as_str() != "" {
+            args.push(arg.clone());
+        }
         args
     }
 
