@@ -41,9 +41,9 @@ let array = array(i4)[1 2 3]
 ```
 
 # Todo
-- Add dynamic libraries support
 - Comptime memory management
 - Parallel computing support (Threads and Forks)
 - Sugar syntax for type casting
 - Improve operations parsing
+- Implement loops
 - Refactor the entire codebase (it is pretty ugly...)
