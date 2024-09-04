@@ -428,7 +428,8 @@ impl NoirParser {
                 Rule::r#bool => value = self.build_bool(eval, context),
                 Rule::r#char => value = self.build_char(eval, context),
                 Rule::type_casting => {
-                    value = Value::Casting((Box::new(value), eval.as_str()[3..].into()))
+                    println!("{}", eval.as_str());
+                    value = Value::Casting((Box::new(value), eval.as_str().split_whitespace().collect::<Vec<&str>>()[1].trim().to_string()))
                 }
                 rule => unreachable!("{:?}", rule),
             };
@@ -742,6 +743,11 @@ impl NoirParser {
     }
 
     fn build_integer(&self, pair: Pair<Rule>, context: &mut AstContext) -> Value {
+        let clone = pair.clone();
+        if clone.into_inner().peek().is_some() {
+            println!("PAIR: {}", &pair.as_str()[1..]);
+            return Value::UInt(pair.as_str()[1..].parse().unwrap());
+        }
         Value::Int(pair.as_str().parse().unwrap())
     }
 
@@ -842,8 +848,9 @@ impl NoirParser {
         let mut bytecount = 4;
         let mut is_unsigned = false;
         for pair in pairs {
+            println!("PAIR: {}", pair.as_str());
             match pair.as_rule() {
-                Rule::integer => bytecount = pair.as_str().parse().unwrap(),
+                Rule::integer => bytecount = pair.as_str().trim().parse().unwrap(),
                 Rule::unsigned => is_unsigned = true,
                 _ => unreachable!(),
             }

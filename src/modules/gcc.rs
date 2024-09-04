@@ -3,7 +3,6 @@ use gccjit::{
     ToRValue, Type, Typeable, UnaryOp,
 };
 use std::collections::HashMap;
-use std::str::FromStr;
 
 use super::memory::Memory;
 use super::parser::Ast;
@@ -130,8 +129,35 @@ impl<'a> GccContext<'a> {
         Self { context }
     }
 
-    pub fn type_of(&'a self, argument: Type<'a>) {
+    fn gen_numeric_types(&'a self, memory: &mut Memory<'a>) {
+        let int_type = <i32 as Typeable>::get_type(self.context);
+        let long_type = <i64 as Typeable>::get_type(self.context);
+        let float_type = <f32 as Typeable>::get_type(self.context);
+        let uint_type = <u32 as Typeable>::get_type(self.context);
+        let ulong_type = <u64 as Typeable>::get_type(self.context);
+        memory.datatypes.insert("i32".into(), int_type);
+        memory.datatypes.insert("i64".into(), long_type);
+        memory.datatypes.insert("f32".into(), float_type);
+        memory.datatypes.insert("u32".into(), uint_type);
+        memory.datatypes.insert("u64".into(), ulong_type);
+    }
 
+    fn gen_text_types(&'a self, memory: &mut Memory<'a>) {
+        let char_type = <char as Typeable>::get_type(self.context);
+        let string_type = char_type.make_pointer();
+        memory.datatypes.insert("char".into(), char_type);
+        memory.datatypes.insert("string".into(), string_type);
+    }
+
+    fn gen_void_type(&'a self, memory: &mut Memory<'a>) {
+        let void_ptr_type = <() as Typeable>::get_type(self.context).make_pointer();
+        memory.datatypes.insert("Any".into(), void_ptr_type);
+    }
+
+    fn gen_primitive_types(&'a self, memory: &mut Memory<'a>) {
+        self.gen_numeric_types(memory);
+        self.gen_text_types(memory);
+        self.gen_void_type(memory);
     }
 
     fn parse_expression(&'a self, ast: &Ast, memory: &mut Memory<'a>, block: &mut Block<'a>) {
@@ -201,6 +227,7 @@ impl<'a> GccContext<'a> {
     }
 
     fn setup_entry_point(&'a self, ast: &Ast, memory: &mut Memory<'a>) -> Block<'a> {
+        self.gen_primitive_types(memory);
         self.add_builtin_functions(memory);
         self.build_imports(memory, ast);
         let dt = <i32 as Typeable>::get_type(&self.context);
@@ -475,6 +502,7 @@ impl<'a> GccContext<'a> {
     ) -> GccValues<'a> {
         let rtn = match value {
             Value::Int(number) => self.parse_int(*number),
+            Value::UInt(number) => self.parse_uint(*number),
             Value::Float(number) => self.parse_float(*number),
             Value::String(ref string) => self.parse_string(string),
             Value::Name(ref name) => self.parse_name(name, memory, block),
@@ -536,19 +564,7 @@ impl<'a> GccContext<'a> {
             Value::Casting((ref value, ref target)) => {
                 let value = self.parse_value(&value, block, memory, ast);
                 let target = memory.datatypes.get(target).unwrap();
-                GccValues::R(
-                    if value.rvalue().get_type().is_compatible_with(
-                        <() as Typeable>::get_type(&self.context).make_pointer(),
-                    ) {
-                        let target = target.make_pointer();
-                        let value = self.context.new_cast(None, value.rvalue(), target);
-                        value.dereference(None).to_rvalue()
-                    } else {
-                        self.context
-                            .new_cast(None, value.rvalue(), *target)
-                            .to_rvalue()
-                    },
-                )
+                GccValues::R(self.new_cast(*target, &value, memory))
             }
             _ => todo!(),
         };
@@ -724,10 +740,13 @@ impl<'a> GccContext<'a> {
         let allocation = self
             .context
             .new_cast(None, allocation, data_type.make_pointer());
+        let active_fn = block.get_function();
+        let lvalue = active_fn.new_local(None, data_type.make_pointer(), self.uuid());
+        block.add_assignment(None, lvalue, allocation);
         for i in 0..array.elements.len() {
             let access = self.context.new_array_access(
                 None,
-                allocation,
+                lvalue,
                 self.context
                     .new_rvalue_from_int(<i32 as Typeable>::get_type(&self.context), i as i32),
             );
@@ -735,7 +754,7 @@ impl<'a> GccContext<'a> {
             let element = self.parse_value(element, block, memory, ast).rvalue();
             block.add_assignment(None, access, element);
         }
-        GccValues::R(allocation)
+        GccValues::L(lvalue)
     }
 
     fn parse_block(
@@ -1253,6 +1272,11 @@ impl<'a> GccContext<'a> {
     fn parse_int(&self, number: i32) -> GccValues<'_> {
         let data_type = <i32 as Typeable>::get_type(&self.context);
         GccValues::R(self.context.new_rvalue_from_int(data_type, number))
+    }
+
+    fn parse_uint(&self, number: u32) -> GccValues<'_> {
+        let data_type = <u32 as Typeable>::get_type(self.context);
+        GccValues::R(self.context.new_rvalue_from_int(data_type, number as i32))
     }
 
     fn parse_float(&self, number: f32) -> GccValues<'_> {

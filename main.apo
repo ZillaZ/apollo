@@ -1,17 +1,36 @@
 link with raylib
 
+struct Color {
+  r: char
+  g: char
+  b: char
+  a: char
+}
+
+extern fn free(ptr: Any) {}
 extern fn InitWindow(x: i4, y: i4, title: string) {}
 extern fn WindowShouldClose() -> bool {}
 extern fn CloseWindow() {}
 extern fn BeginDrawing() {}
 extern fn EndDrawing() {}
-extern fn ClearBackground() {}
-
+extern fn ClearBackground(rgb: Color) {}
 InitWindow(1280, 720, "Hello, Raylib!")
+
+let r : char = 255
+let g : char = 00
+let b : char = 255
+let a : char = 255
+
+let color = new Color {
+  r: 255 as char
+  g: g
+  b: b
+  a: a
+}
 
 while (-WindowShouldClose()) {
   BeginDrawing()
-  ClearBackground()
+  ClearBackground(color)
   EndDrawing()
 }
 

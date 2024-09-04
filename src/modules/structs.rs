@@ -169,6 +169,7 @@ pub enum Value {
     Call(Call),
     String(String),
     Int(i32),
+    UInt(u32),
     Float(f32),
     Block(Box<Block>),
     Name(Name),
