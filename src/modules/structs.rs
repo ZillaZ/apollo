@@ -214,6 +214,12 @@ impl Block {
             context: AstContext::new()
         }
     }
+    pub fn default() -> Block {
+        Block {
+            expr: Vec::new(),
+            box_return: None
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -326,6 +332,12 @@ pub struct Import {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct WhileLoop {
+    pub condition: Value,
+    pub block: Box<Block>
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum Expr {
     Return(Return),
     Call(Call),
@@ -340,7 +352,8 @@ pub enum Expr {
     FieldAccess(FieldAccess),
     Trait(Trait),
     Extension(Extension),
-    Link(LibLink)
+    Link(LibLink),
+    While(WhileLoop)
 }
 
 impl Expr {

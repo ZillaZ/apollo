@@ -7,7 +7,7 @@ use std::str::FromStr;
 
 use super::memory::Memory;
 use super::parser::Ast;
-use super::structs::{Expr, FunctionKind, LibLink};
+use super::structs::{Expr, FunctionKind, LibLink, WhileLoop};
 use super::structs::{
     self, AssignVar, Constructor, DataType, FieldAccessName, Name, Overloaded, OverloadedOp, RefOp,
     StructDecl, Value,
@@ -172,9 +172,28 @@ impl<'a> GccContext<'a> {
                 }
                 Expr::Trait(ref r#trait) => self.parse_trait(r#trait, block, reference),
                 Expr::Link(ref lib_link) => self.add_link(lib_link),
+                Expr::While(ref wl) => self.parse_while_loop(wl, block, ast, reference),
                 _ => continue,
             }
         }
+    }
+
+    fn uuid(&'a self) -> String {
+        uuid::Uuid::new_v4().to_string()
+    }
+
+    fn parse_while_loop(&'a self, wl: &WhileLoop, block: &mut Block<'a>, ast: &Ast, memory: &mut Memory<'a>) {
+        let active_function = block.get_function();
+        let mut while_loop = active_function.new_block(self.uuid());
+        block.end_with_jump(None, while_loop);
+        let continue_block = active_function.new_block(self.uuid());
+        *block = continue_block;
+        let rtn = self.parse_block(&wl.block, &mut while_loop, memory, ast);
+        let condition = self.parse_value(&wl.condition, block, memory, ast);
+        if rtn != GccValues::Nil {
+            panic!("Can't return inside of while loop. If you want to break early, use if.")
+        }
+        while_loop.end_with_conditional(None, condition.rvalue(), while_loop, continue_block);
     }
 
     fn add_link(&'a self, lib_link: &LibLink) {
@@ -209,7 +228,6 @@ impl<'a> GccContext<'a> {
     pub fn gen_bytecode(&'a self, ast: &Ast, memory: &mut Memory<'a>, should_compile: bool) {
         let mut block = self.setup_entry_point(ast, memory);
         self.parse_expression(ast, memory, &mut block);
-
         block.end_with_return(
             None,
             self.context
@@ -730,6 +748,7 @@ impl<'a> GccContext<'a> {
         self.parse_expression(&ast_block.to_ast(), memory, new_block);
         if let Some(ref rtn) = ast_block.box_return {
             self.build_return(rtn, new_block, memory, ast);
+            return GccValues::R(self.context.new_rvalue_from_int(<i32 as Typeable>::get_type(&self.context), 0));
         }
         GccValues::Nil
     }

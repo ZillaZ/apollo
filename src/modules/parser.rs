@@ -122,6 +122,7 @@ impl NoirParser {
                 Rule::r#trait => Expr::Trait(self.build_trait(&mut pair.into_inner(), context)),
                 Rule::compiler_extension => Expr::Extension(self.build_extension(&mut pair.into_inner(), context)),
                 Rule::lib_link => Expr::Link(self.build_link(&mut pair.into_inner())),
+                Rule::r#while => Expr::While(self.build_while_loop(&mut pair.into_inner(), context)),
                 Rule::EOI => continue,
                 rule => unreachable!("{:?}", rule),
             };
@@ -129,6 +130,22 @@ impl NoirParser {
         }
 
         expressions
+    }
+
+    fn build_while_loop(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> WhileLoop {
+        let mut condition = Value::Int(0);
+        let mut block = Block::default();
+        for pair in pairs {
+            match pair.as_rule() {
+                Rule::value => condition = self.build_value(&mut pair.into_inner(), context),
+                Rule::block => block = self.build_block(&mut pair.into_inner(), context),
+                _ => unreachable!()
+            }
+        }
+        WhileLoop {
+            condition,
+            block: Box::new(block)
+        }
     }
 
     fn build_link(&self, pairs: &mut Pairs<Rule>) -> LibLink {
