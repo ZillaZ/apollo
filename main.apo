@@ -14,8 +14,9 @@ extern fn CloseWindow() {}
 extern fn BeginDrawing() {}
 extern fn EndDrawing() {}
 extern fn ClearBackground(rgb: Color) {}
+extern fn SetTargetFPS(fps: i4) {}
 InitWindow(1280, 720, "Hello, Raylib!")
-
+SetTargetFPS(60)
 let r : char = 255
 let g : char = 00
 let b : char = 255
@@ -28,7 +29,16 @@ let color = new Color {
   a: a
 }
 
+let count = 10
+
 while (-WindowShouldClose()) {
+  if count == 0 {
+      color.r = ((color.r as i4) - 10) as char
+      count = 10
+      printf("%d\n", color.r)
+  }else{
+    count -= 1
+  }
   BeginDrawing()
   ClearBackground(color)
   EndDrawing()

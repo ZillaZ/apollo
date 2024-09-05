@@ -1,10 +1,11 @@
-use gccjit::{Function, LValue, Struct, Type};
+use gccjit::{Block, Function, LValue, Struct, Type};
 use std::collections::HashMap;
 
 use super::gcc::{GccContext, GccValues};
 
 pub struct Memory<'a> {
     pub name: String,
+    pub last_block: Option<Block<'a>>,
     pub variables: HashMap<String, HashMap<String, LValue<'a>>>,
     pub functions: HashMap<String, Function<'a>>,
     pub builtins: Vec<String>,
@@ -22,6 +23,7 @@ pub struct Memory<'a> {
 
 impl<'a> Memory<'a> {
     pub fn new(name: String) -> Self {
+        let last_block = None;
         let variables = HashMap::new();
         let functions = HashMap::new();
         let builtins = vec!["printf", "strnlen", "malloc", "memcpy"]
@@ -40,6 +42,7 @@ impl<'a> Memory<'a> {
         let extensions = HashMap::new();
         Self {
             name,
+            last_block,
             variables,
             functions,
             builtins,

@@ -121,10 +121,6 @@ pub struct GccContext<'a> {
 }
 
 impl<'a> GccContext<'a> {
-    pub fn new_with_context(context: &'a Context<'a>, ast: Ast) -> GccContext<'a> {
-        Self { context }
-    }
-
     pub fn new(context: &'a Context<'a>) -> Self {
         Self { context }
     }
@@ -135,11 +131,11 @@ impl<'a> GccContext<'a> {
         let float_type = <f32 as Typeable>::get_type(self.context);
         let uint_type = <u32 as Typeable>::get_type(self.context);
         let ulong_type = <u64 as Typeable>::get_type(self.context);
-        memory.datatypes.insert("i32".into(), int_type);
-        memory.datatypes.insert("i64".into(), long_type);
-        memory.datatypes.insert("f32".into(), float_type);
-        memory.datatypes.insert("u32".into(), uint_type);
-        memory.datatypes.insert("u64".into(), ulong_type);
+        memory.datatypes.insert("i4".into(), int_type);
+        memory.datatypes.insert("i8".into(), long_type);
+        memory.datatypes.insert("f4".into(), float_type);
+        memory.datatypes.insert("u3".into(), uint_type);
+        memory.datatypes.insert("u8".into(), ulong_type);
     }
 
     fn gen_text_types(&'a self, memory: &mut Memory<'a>) {
@@ -219,7 +215,11 @@ impl<'a> GccContext<'a> {
         if rtn != GccValues::Nil {
             panic!("Can't return inside of while loop. If you want to break early, use if.")
         }
-        while_loop.end_with_conditional(None, condition.rvalue(), while_loop, continue_block);
+        if let Some(last_block) = memory.last_block {
+           while_loop.end_with_conditional(None, condition.rvalue(), last_block, continue_block);
+        }else{
+            while_loop.end_with_conditional(None, condition.rvalue(), while_loop, continue_block);
+        }
     }
 
     fn add_link(&'a self, lib_link: &LibLink) {
@@ -308,8 +308,7 @@ impl<'a> GccContext<'a> {
         for field in r#struct.fields.iter() {
             new_struct.insert(field.name.clone(), counter);
             counter += 1;
-            let field_type = self.parse_datatype(&field.datatype.clone(), memory);
-            let field = self.context.new_field(None, field_type, field.name.clone());
+            let field = self.parse_field(&field, memory);
             fields.push(field);
         }
         let struct_type =
@@ -563,7 +562,7 @@ impl<'a> GccContext<'a> {
             }
             Value::Casting((ref value, ref target)) => {
                 let value = self.parse_value(&value, block, memory, ast);
-                let target = memory.datatypes.get(target).unwrap();
+                let target = memory.datatypes.get(target.trim()).unwrap();
                 GccValues::R(self.new_cast(*target, &value, memory))
             }
             _ => todo!(),
@@ -598,11 +597,13 @@ impl<'a> GccContext<'a> {
         match name {
             FieldAccessName::Name(ref name) => match aux {
                 Some(val) => {
+                    println!("some");
                     let value = if let Some(field) = val.rvalue().get_type().is_struct() {
+                        println!("here");
                         let struct_fields = memory.structs.get(&field).unwrap();
                         let field_index = struct_fields.get(&name.name).unwrap();
                         let field = field.get_field(*field_index);
-                        GccValues::R(val.rvalue().access_field(None, field))
+                        GccValues::L(val.dereference().access_field(None, field))
                     } else if let Some(field) = val
                         .rvalue()
                         .dereference(None)
@@ -624,6 +625,7 @@ impl<'a> GccContext<'a> {
                     }
                 }
                 None => {
+                    println!("none");
                     let var = memory
                         .variables
                         .get(&memory.function_scope)
@@ -695,7 +697,6 @@ impl<'a> GccContext<'a> {
     fn parse_field(
         &'a self,
         field: &structs::FieldDecl,
-        block: &mut Block<'a>,
         memory: &mut Memory<'a>,
     ) -> gccjit::Field<'a> {
         let datatype = self.parse_datatype(&field.datatype, memory);
@@ -913,8 +914,8 @@ impl<'a> GccContext<'a> {
             condition = self.context.new_unary_op(None, UnaryOp::LogicalNegate, condition.get_type(), condition);
         }
         let function = block.get_function();
-        let mut then_block = function.new_block("then_block");
-        let mut else_block = function.new_block("else_block");
+        let mut then_block = function.new_block(self.uuid());
+        let mut else_block = function.new_block(self.uuid());
         self.parse_block(&ast_if.block, &mut then_block, memory, ast);
         block.end_with_conditional(None, condition, then_block, else_block);
         let mut else_should_continue = false;
@@ -931,6 +932,7 @@ impl<'a> GccContext<'a> {
         }
         if ast_if.block.box_return.is_none() || else_should_continue {
             let continue_block = function.new_block("continue_block");
+            memory.last_block = Some(*block);
             if ast_if.block.box_return.is_none() {
                 then_block.end_with_jump(None, continue_block);
             }

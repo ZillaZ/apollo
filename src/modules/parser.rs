@@ -431,6 +431,7 @@ impl NoirParser {
                     println!("{}", eval.as_str());
                     value = Value::Casting((Box::new(value), eval.as_str().split_whitespace().collect::<Vec<&str>>()[1].trim().to_string()))
                 }
+                Rule::value => value = self.build_value(&mut eval.into_inner(), context),
                 rule => unreachable!("{:?}", rule),
             };
         }
@@ -744,11 +745,11 @@ impl NoirParser {
 
     fn build_integer(&self, pair: Pair<Rule>, context: &mut AstContext) -> Value {
         let clone = pair.clone();
+        println!("PAIR: {}", &pair.as_str().trim());
         if clone.into_inner().peek().is_some() {
-            println!("PAIR: {}", &pair.as_str()[1..]);
             return Value::UInt(pair.as_str()[1..].parse().unwrap());
         }
-        Value::Int(pair.as_str().parse().unwrap())
+        Value::Int(pair.as_str().trim().parse().unwrap())
     }
 
     fn build_float(&self, pair: Pair<Rule>, context: &mut AstContext) -> Value {
