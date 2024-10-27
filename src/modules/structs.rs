@@ -181,6 +181,7 @@ pub enum Value {
     ArrayAccess(Box<ArrayAccess>),
     Constructor(Box<Constructor>),
     FieldAccess(Box<FieldAccess>),
+    Range(RangeValue),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -212,13 +213,13 @@ impl Block {
             namespace: "nil".into(),
             expressions: self.expr.iter().map(|x| *x.clone()).collect::<Vec<_>>(),
             imports: std::collections::HashMap::new(),
-            context: AstContext::new()
+            context: AstContext::new(),
         }
     }
     pub fn default() -> Block {
         Block {
             expr: Vec::new(),
-            box_return: None
+            box_return: None,
         }
     }
 }
@@ -227,7 +228,7 @@ impl Block {
 pub enum FunctionKind {
     Exported,
     External,
-    Native
+    Native,
 }
 
 impl FunctionKind {
@@ -235,7 +236,7 @@ impl FunctionKind {
         match expr {
             "extern" => FunctionKind::External,
             "export" => FunctionKind::Exported,
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
@@ -246,7 +247,7 @@ impl FunctionKind {
             Exported => FunctionType::Exported,
             External => FunctionType::Extern,
             Native => FunctionType::Internal,
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 }
@@ -290,7 +291,7 @@ pub struct If {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Extension {
     pub name: String,
-    pub body: String
+    pub body: String,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -309,7 +310,7 @@ pub enum OverloadedLHS {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct LibLink {
-    pub lib_name: String
+    pub lib_name: String,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -335,7 +336,33 @@ pub struct Import {
 #[derive(Clone, Debug, PartialEq)]
 pub struct WhileLoop {
     pub condition: Value,
-    pub block: Box<Block>
+    pub block: Box<Block>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ForLoop {
+    pub pivot: String,
+    pub range: Value,
+    pub block: Block,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Range {
+    pub start: Value,
+    pub range_type: RangeType,
+    pub end: Value,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum RangeValue {
+    Iterable(Box<Value>),
+    Range(Box<Range>),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum RangeType {
+    Inclusive,
+    Exclusive,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -354,7 +381,8 @@ pub enum Expr {
     Trait(Trait),
     Extension(Extension),
     Link(LibLink),
-    While(WhileLoop)
+    While(WhileLoop),
+    For(ForLoop),
 }
 
 impl Expr {

@@ -120,9 +120,14 @@ impl NoirParser {
                     Expr::FieldAccess(self.build_field_access(&mut pair.into_inner(), context))
                 }
                 Rule::r#trait => Expr::Trait(self.build_trait(&mut pair.into_inner(), context)),
-                Rule::compiler_extension => Expr::Extension(self.build_extension(&mut pair.into_inner(), context)),
+                Rule::compiler_extension => {
+                    Expr::Extension(self.build_extension(&mut pair.into_inner(), context))
+                }
                 Rule::lib_link => Expr::Link(self.build_link(&mut pair.into_inner())),
-                Rule::r#while => Expr::While(self.build_while_loop(&mut pair.into_inner(), context)),
+                Rule::r#while => {
+                    Expr::While(self.build_while_loop(&mut pair.into_inner(), context))
+                }
+                Rule::r#for => Expr::For(self.build_for_loop(&mut pair.into_inner(), context)),
                 Rule::EOI => continue,
                 rule => unreachable!("{:?}", rule),
             };
@@ -132,6 +137,25 @@ impl NoirParser {
         expressions
     }
 
+    fn build_for_loop(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> ForLoop {
+        let mut pivot = String::new();
+        let mut range = Value::Int(0);
+        let mut block = Block::default();
+        for pair in pairs {
+            match pair.as_rule() {
+                Rule::name => pivot = pair.as_str().to_string(),
+                Rule::value => range = self.build_value(&mut pair.into_inner(), context),
+                Rule::block => block = self.build_block(&mut pair.into_inner(), context),
+                _ => todo!(),
+            }
+        }
+        ForLoop {
+            pivot,
+            range,
+            block,
+        }
+    }
+
     fn build_while_loop(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> WhileLoop {
         let mut condition = Value::Int(0);
         let mut block = Block::default();
@@ -139,12 +163,12 @@ impl NoirParser {
             match pair.as_rule() {
                 Rule::value => condition = self.build_value(&mut pair.into_inner(), context),
                 Rule::block => block = self.build_block(&mut pair.into_inner(), context),
-                _ => unreachable!()
+                _ => unreachable!(),
             }
         }
         WhileLoop {
             condition,
-            block: Box::new(block)
+            block: Box::new(block),
         }
     }
 
@@ -152,7 +176,7 @@ impl NoirParser {
         let mut eval = pairs.peekable();
         let eval = eval.peek().unwrap();
         LibLink {
-            lib_name: eval.as_str().trim().into()
+            lib_name: eval.as_str().trim().into(),
         }
     }
 
@@ -165,7 +189,7 @@ impl NoirParser {
             match pair.as_rule() {
                 Rule::name_str => rtn.name = pair.as_str().into(),
                 Rule::string_value => rtn.body = pair.as_str().into(),
-                _ => unreachable!()
+                _ => unreachable!(),
             }
         }
         rtn
@@ -249,7 +273,10 @@ impl NoirParser {
     fn build_imported_fn(&self, pairs: &mut Pairs<Rule>) -> Vec<String> {
         let mut imports = Vec::new();
         for pair in pairs {
-            let eval = pair.into_inner().map(|x| x.as_str().to_string()).collect::<Vec<_>>();
+            let eval = pair
+                .into_inner()
+                .map(|x| x.as_str().to_string())
+                .collect::<Vec<_>>();
             imports.push(eval.join("/"));
         }
         imports
@@ -429,14 +456,70 @@ impl NoirParser {
                 Rule::r#char => value = self.build_char(eval, context),
                 Rule::type_casting => {
                     println!("{}", eval.as_str());
-                    value = Value::Casting((Box::new(value), eval.as_str().split_whitespace().collect::<Vec<&str>>()[1].trim().to_string()))
+                    value = Value::Casting((
+                        Box::new(value),
+                        eval.as_str().split_whitespace().collect::<Vec<&str>>()[1]
+                            .trim()
+                            .to_string(),
+                    ))
                 }
                 Rule::value => value = self.build_value(&mut eval.into_inner(), context),
+                Rule::range => {
+                    value = Value::Range(self.build_range(&mut eval.into_inner(), context))
+                }
                 rule => unreachable!("{:?}", rule),
             };
         }
         value
     }
+
+    fn build_range(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> RangeValue {
+        if pairs.len() > 1 {
+            let mut start = Value::Int(0);
+            let mut end = Value::Int(0);
+            let mut range_type = RangeType::Exclusive;
+            let mut changed = false;
+            for pair in pairs {
+                match pair.as_rule() {
+                    Rule::value => {
+                        if changed {
+                            end = self.build_value(&mut pair.into_inner(), context);
+                        } else {
+                            start = self.build_value(&mut pair.into_inner(), context);
+                            changed = true;
+                        }
+                    }
+                    Rule::range_type => {
+                        range_type = self.build_range_type(&mut pair.into_inner(), context)
+                    }
+                    _ => todo!(),
+                }
+            }
+            RangeValue::Range(Box::new(Range {
+                start,
+                range_type,
+                end,
+            }))
+        } else {
+            let value = pairs.peek().unwrap();
+            match value.as_rule() {
+                Rule::value => RangeValue::Iterable(Box::new(
+                    self.build_value(&mut value.into_inner(), context),
+                )),
+                _ => todo!(),
+            }
+        }
+    }
+
+    fn build_range_type(&self, pairs: &mut Pairs<Rule>, _context: &mut AstContext) -> RangeType {
+        let eval = pairs.peek().unwrap();
+        match eval.as_rule() {
+            Rule::range_exclusive => RangeType::Exclusive,
+            Rule::range_inclusive => RangeType::Inclusive,
+            _ => todo!(),
+        }
+    }
+
     fn build_field_access(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> FieldAccess {
         let mut head: Option<Box<FieldAccess>> = None;
         let mut prev = &mut head;

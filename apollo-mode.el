@@ -19,10 +19,10 @@
 (setq apollo-imported "::{\\([[:space:]]*\\(\\w\\|_\\)+\/\\(\\w\\|_\\)+[[:space:]]*\\)+}\\|\\(?:::\\)\\(\\w\\|_\\)+\n")
 
 (defvar apollo-keywords nil "Apollo keywords.")
-(setq apollo-keywords '("new" "fn" "if" "else" "return" "trait" "struct" "use" "let"))
+(setq apollo-keywords '("as" "extern" "new" "link" "with" "fn" "if" "else" "return" "trait" "struct" "use" "let"))
 
 (defvar apollo-types nil "Apollo types.")
-(setq apollo-types '("f1" "f2" "f4" "f8" "i1" "i2" "i4" "i8" "string" "array" "bool"))
+(setq apollo-types '("f1" "f2" "f4" "f8" "i1" "i2" "i4" "i8" "char" "string" "array" "bool"))
 
 (defvar apollo-custom-types nil "Apollo return types.")
 (setq apollo-custom-types (concat cap-test "\\w+"))
@@ -54,7 +54,7 @@
          (cons xvarname-regex 'font-lock-variable-name-face))))
 
 ;;;###autoload
-(define-derived-mode apollo-mode c-mode "apollo-mode"
+(define-derived-mode apollo-mode go-mode "apollo-mode"
   "Major mode for editing the Apollo Programming Language."
 
   ;; code for syntax highlighting

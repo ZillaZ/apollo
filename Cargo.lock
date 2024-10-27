@@ -110,6 +110,7 @@ dependencies = [
  "gccjit",
  "pest",
  "pest_derive",
+ "rust-analyzer",
  "uuid",
 ]
 
@@ -220,6 +221,12 @@ checksum = "ec0be4795e2f6a28069bec0b5ff3e2ac9bafc99e6a9a7dc3547996c5c816922c"
 dependencies = [
  "getrandom",
 ]
+
+[[package]]
+name = "rust-analyzer"
+version = "0.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "11707871ffa56ce568d4f15dd34c2f891a2aa5e4b3435b99b8f99938492525c3"
 
 [[package]]
 name = "sha2"
