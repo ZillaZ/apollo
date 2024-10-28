@@ -5,6 +5,7 @@ use gccjit::{
 use std::borrow::BorrowMut;
 use std::collections::HashMap;
 use std::fmt::Pointer;
+use std::rc::Rc;
 
 use super::memory::{self, Memory};
 use super::parser::Ast;
@@ -312,9 +313,10 @@ impl<'a> GccContext<'a> {
             block.add_assignment(None, pivot, start.rvalue());
         }
         let mut loop_block = function.new_block(self.uuid());
-        self.parse_block(&fl.block, &mut loop_block, memory, ast);
+        memory.blocks.insert(loop_block, false);
         let index = function.new_local(None, start.rvalue().get_type(), self.uuid());
         block.add_assignment(None, index, start.rvalue());
+        println!("{:?}", memory.continue_block);
         let continue_block = function.new_block(self.uuid());
         let condition_block = function.new_block(self.uuid());
         if is_iterable {
@@ -348,8 +350,12 @@ impl<'a> GccContext<'a> {
                 memory.units.get(&datatype).unwrap().to_rvalue(),
             );
         }
+        memory.blocks.insert(condition_block, true);
         block.end_with_jump(None, condition_block);
+        memory.blocks.insert(*block, true);
+        self.parse_block(&fl.block, &mut loop_block, memory, ast);
         loop_block.end_with_jump(None, condition_block);
+        memory.blocks.insert(loop_block, true);
         *block = continue_block;
     }
 
@@ -401,6 +407,8 @@ impl<'a> GccContext<'a> {
     }
 
     fn compile_program(&'a self) {
+        self.context
+            .set_optimization_level(gccjit::OptimizationLevel::Aggressive);
         self.context.set_program_name("apollo");
         self.context.dump_to_file("apollo.c", false);
         self.context
@@ -931,38 +939,30 @@ impl<'a> GccContext<'a> {
         ast: &Ast,
     ) -> GccValues<'a> {
         let data_type = self.parse_datatype(&array.array_type.data_type, memory);
-        let array_size = self
-            .parse_value(&array.array_type.size, block, memory, ast)
-            .rvalue();
-        let sizeof = self
-            .context
-            .new_rvalue_from_int(data_type, data_type.get_size() as i32);
-        let size = self
-            .context
-            .new_binary_op(None, BinaryOp::Mult, data_type, array_size, sizeof);
-        let malloc = memory.functions.get("malloc").unwrap();
-        let size = self
-            .context
-            .new_cast(None, size, malloc.get_param(0).to_rvalue().get_type());
-        let allocation = self.context.new_call(None, *malloc, &[size]);
-        let allocation = self
-            .context
-            .new_cast(None, allocation, data_type.make_pointer());
-        let active_fn = block.get_function();
-        let lvalue = active_fn.new_local(None, data_type.make_pointer(), self.uuid());
-        block.add_assignment(None, lvalue, allocation);
+        let array_type = match array.array_type.size.clone() {
+            Value::Operation(op) => match (*op).clone() {
+                Operation::Atom(atom) => match atom.value {
+                    Value::Int(size) => self.context.new_array_type(None, data_type, size as u64),
+                    _ => todo!(),
+                },
+                _ => todo!(),
+            },
+            _ => {
+                println!("{:?}", array.array_type.size);
+                todo!();
+            }
+        };
+        let mut elements = Vec::new();
         for i in 0..array.elements.len() {
-            let access = self.context.new_array_access(
-                None,
-                lvalue,
-                self.context
-                    .new_rvalue_from_int(<i32 as Typeable>::get_type(&self.context), i as i32),
-            );
-            let element = &array.elements[i];
-            let element = self.parse_value(element, block, memory, ast).rvalue();
-            block.add_assignment(None, access, element);
+            let element = self
+                .parse_value(&array.elements[i], block, memory, ast)
+                .rvalue();
+            elements.push(element);
         }
-        GccValues::L(lvalue)
+        let array = self
+            .context
+            .new_array_constructor(None, array_type, elements.as_slice());
+        GccValues::R(array)
     }
 
     fn parse_block(
@@ -1094,7 +1094,24 @@ impl<'a> GccContext<'a> {
             DataType::UInt(bytecount) => self.context.new_int_type(*bytecount as i32, false),
             DataType::Array(array_type) => {
                 let element_type = self.parse_datatype(&array_type.data_type, memory);
-                element_type.make_pointer()
+                match array_type.size.clone() {
+                    Value::Operation(op) => match (*op).clone() {
+                        Operation::Atom(atom) => match atom.value {
+                            Value::Int(size) => {
+                                self.context.new_array_type(None, element_type, size as u64)
+                            }
+                            _ => todo!(),
+                        },
+                        _ => todo!(),
+                    },
+                    Value::Int(size) => {
+                        self.context.new_array_type(None, element_type, size as u64)
+                    }
+                    _ => {
+                        println!("{:?}", array_type.size);
+                        todo!();
+                    }
+                }
             }
             DataType::String => string_type,
             DataType::Char => <char as Typeable>::get_type(&self.context),
@@ -1153,7 +1170,7 @@ impl<'a> GccContext<'a> {
             }
         }
         if ast_if.block.box_return.is_none() || else_should_continue {
-            let continue_block = function.new_block("continue_block");
+            let continue_block = function.new_block(self.uuid());
             memory.last_block = Some(*block);
             if ast_if.block.box_return.is_none() {
                 then_block.end_with_jump(None, continue_block);

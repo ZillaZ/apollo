@@ -1,5 +1,5 @@
 use gccjit::{Block, Function, LValue, RValue, Struct, Type};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::gcc::{GccContext, GccValues};
 
@@ -19,6 +19,8 @@ pub struct Memory<'a> {
     pub trait_types: HashMap<Type<'a>, String>,
     pub index: Option<LValue<'a>>,
     pub units: HashMap<Type<'a>, RValue<'a>>,
+    pub continue_block: Option<Block<'a>>,
+    pub blocks: HashMap<Block<'a>, bool>,
     pub memory_tree: Vec<Box<Memory<'a>>>,
     pub extensions: HashMap<String, Box<dyn Fn(Vec<GccValues>) -> GccValues>>,
 }
@@ -40,8 +42,10 @@ impl<'a> Memory<'a> {
         let function_scope = "main".into();
         let anon_count = 0;
         let trait_types = HashMap::new();
-        let units = HashMap::new();
         let index = None;
+        let units = HashMap::new();
+        let continue_block = None;
+        let blocks = HashMap::new();
         let memory_tree = Vec::new();
         let extensions = HashMap::new();
         Self {
@@ -58,8 +62,10 @@ impl<'a> Memory<'a> {
             function_scope,
             anon_count,
             trait_types,
-            units,
             index,
+            units,
+            continue_block,
+            blocks,
             memory_tree,
             extensions,
         }
