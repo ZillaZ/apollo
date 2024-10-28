@@ -4,6 +4,7 @@ use gccjit::{
 };
 use std::borrow::BorrowMut;
 use std::collections::HashMap;
+use std::fmt::Pointer;
 
 use super::memory::{self, Memory};
 use super::parser::Ast;
@@ -236,14 +237,58 @@ impl<'a> GccContext<'a> {
     ) {
         let function = block.get_function();
         let value = self.parse_value(&fl.range, block, memory, ast);
+        let mut iterable_value = GccValues::Nil;
         let datatype = match value {
             GccValues::Pair((ref left, _)) => left.rvalue().get_type(),
-            GccValues::L(val) => val.to_rvalue().get_type(),
+            GccValues::L(val) => {
+                let fields = memory
+                    .structs
+                    .get(&val.to_rvalue().get_type().is_struct().unwrap())
+                    .unwrap();
+                let index = fields.get("elements").unwrap();
+                let field = val
+                    .to_rvalue()
+                    .get_type()
+                    .is_struct()
+                    .unwrap()
+                    .get_field(*index);
+                iterable_value = GccValues::R(val.access_field(None, field).to_rvalue());
+                self.context
+                    .new_array_access(
+                        None,
+                        iterable_value.rvalue(),
+                        self.parse_value(&Value::Int(0), block, memory, ast)
+                            .rvalue(),
+                    )
+                    .to_rvalue()
+                    .get_type()
+            }
             GccValues::R(val) => val.get_type(),
             _ => todo!(),
         };
+        let mut is_iterable = false;
         let (start, end) = match value {
             GccValues::Pair((left, right)) => (left, right),
+            GccValues::L(lvalue) => {
+                is_iterable = true;
+                let info = memory
+                    .structs
+                    .get(&lvalue.to_rvalue().get_type().is_struct().unwrap())
+                    .unwrap();
+                let field_index = info.get("length").unwrap();
+                let length = lvalue
+                    .to_rvalue()
+                    .get_type()
+                    .is_struct()
+                    .unwrap()
+                    .get_field(*field_index);
+                let end = lvalue.to_rvalue().access_field(None, length);
+                let start = self.context.new_rvalue_from_int(end.get_type(), 0);
+                let start =
+                    self.context
+                        .new_binary_op(None, BinaryOp::Minus, datatype, start, start);
+                (Box::new(GccValues::R(start)), Box::new(GccValues::R(end)))
+            }
             _ => todo!(),
         };
         println!("{:?} {:?}", start.rvalue(), end.rvalue());
@@ -253,21 +298,56 @@ impl<'a> GccContext<'a> {
             .get_mut(&memory.function_scope)
             .unwrap()
             .insert(fl.pivot.clone(), pivot);
-        block.add_assignment(None, pivot, start.rvalue());
-        let condition =
-            self.context
-                .new_comparison(None, ComparisonOp::Equals, pivot, end.rvalue());
+        if is_iterable {
+            let val = self.context.new_array_access(
+                None,
+                iterable_value.rvalue(),
+                self.parse_value(&Value::Int(0), block, memory, ast)
+                    .rvalue(),
+            );
+            println!("Iterable start is {:?}", val);
+            block.add_assignment(None, pivot, val);
+            println!("Is iterable");
+        } else {
+            block.add_assignment(None, pivot, start.rvalue());
+        }
         let mut loop_block = function.new_block(self.uuid());
         self.parse_block(&fl.block, &mut loop_block, memory, ast);
-        loop_block.add_assignment_op(
-            None,
-            pivot,
-            BinaryOp::Plus,
-            memory.units.get(&datatype).unwrap().to_rvalue(),
-        );
+        let index = function.new_local(None, start.rvalue().get_type(), self.uuid());
+        block.add_assignment(None, index, start.rvalue());
         let continue_block = function.new_block(self.uuid());
         let condition_block = function.new_block(self.uuid());
-        condition_block.end_with_conditional(None, condition, continue_block, loop_block);
+        if is_iterable {
+            let condition =
+                self.context
+                    .new_comparison(None, ComparisonOp::Equals, index, end.rvalue());
+            condition_block.end_with_conditional(None, condition, continue_block, loop_block);
+            loop_block.add_assignment_op(
+                None,
+                index,
+                BinaryOp::Plus,
+                memory
+                    .units
+                    .get(&index.to_rvalue().get_type())
+                    .unwrap()
+                    .to_rvalue(),
+            );
+            let value =
+                self.context
+                    .new_array_access(None, iterable_value.rvalue(), index.to_rvalue());
+            loop_block.add_assignment(None, pivot, value.to_rvalue());
+        } else {
+            let condition =
+                self.context
+                    .new_comparison(None, ComparisonOp::Equals, pivot, end.rvalue());
+            condition_block.end_with_conditional(None, condition, continue_block, loop_block);
+            loop_block.add_assignment_op(
+                None,
+                pivot,
+                BinaryOp::Plus,
+                memory.units.get(&datatype).unwrap().to_rvalue(),
+            );
+        }
         block.end_with_jump(None, condition_block);
         loop_block.end_with_jump(None, condition_block);
         *block = continue_block;
@@ -851,9 +931,15 @@ impl<'a> GccContext<'a> {
         ast: &Ast,
     ) -> GccValues<'a> {
         let data_type = self.parse_datatype(&array.array_type.data_type, memory);
-        let size = self
+        let array_size = self
             .parse_value(&array.array_type.size, block, memory, ast)
             .rvalue();
+        let sizeof = self
+            .context
+            .new_rvalue_from_int(data_type, data_type.get_size() as i32);
+        let size = self
+            .context
+            .new_binary_op(None, BinaryOp::Mult, data_type, array_size, sizeof);
         let malloc = memory.functions.get("malloc").unwrap();
         let size = self
             .context

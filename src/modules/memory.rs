@@ -17,6 +17,7 @@ pub struct Memory<'a> {
     pub function_scope: String,
     pub anon_count: u32,
     pub trait_types: HashMap<Type<'a>, String>,
+    pub index: Option<LValue<'a>>,
     pub units: HashMap<Type<'a>, RValue<'a>>,
     pub memory_tree: Vec<Box<Memory<'a>>>,
     pub extensions: HashMap<String, Box<dyn Fn(Vec<GccValues>) -> GccValues>>,
@@ -40,6 +41,7 @@ impl<'a> Memory<'a> {
         let anon_count = 0;
         let trait_types = HashMap::new();
         let units = HashMap::new();
+        let index = None;
         let memory_tree = Vec::new();
         let extensions = HashMap::new();
         Self {
@@ -57,6 +59,7 @@ impl<'a> Memory<'a> {
             anon_count,
             trait_types,
             units,
+            index,
             memory_tree,
             extensions,
         }

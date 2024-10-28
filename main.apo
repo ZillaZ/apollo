@@ -1,38 +1,28 @@
-link with raylib
-
-struct Color {
-  r : char g : char b : char a : char
+trait Iterable {
+  length: i4
+  elements: array(i4)
 }
 
-extern fn free(ptr: Any) {}
-extern fn InitWindow(x : i4, y : i4, title : string) {}
-extern fn WindowShouldClose() -> bool {}
-extern fn CloseWindow() {}
-extern fn BeginDrawing() {}
-extern fn EndDrawing() {}
-extern fn ClearBackground(rgb : Color) {}
-extern fn SetTargetFPS(fps : i4) {}
-let r = 255
-let g = 255
-let b = 255
-let a = 255
-let color = new Color{
-  r : r as char
-  g : g as char
-  b : b as char
-  a : a as char
+struct Vec {
+  #[Iterable]
 }
 
-
-let min = 'a'
-let max = 'Z'
+let iterable = new Vec {
+  length: 100
+  elements: array(i4 100)[]
+}
 
 fn square(number: i4) -> i4 {
   return number * number
 }
 
-for i in (min..=max) {
-  printf("%c\n", i)
+for i in (0..iterable.length) {
+  iterable.elements[i] = square(i+1)
 }
+
+for i in iterable {
+  printf("%d ", i)
+}
+
 
 printf("out of loop")

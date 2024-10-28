@@ -12,7 +12,7 @@ array_type          =  { "array(" ~ datatype ~ value? ~ ")" }
 array               =  { array_type ~ "[" ~ value* ~ "]" }
 array_access        =  { (call | name) ~ index_access }
 string              = _{ (ASCII_ALPHANUMERIC | "*" | ";" | "(" | ")" | ":" | "=" | ">" | "[" | "]" | "." | "," | "%" | "\\" | "_" | "{" | "}" | "!")* }
-integer             =  { unsigned? ~ ASCII_DIGIT+ }
+integer             =  @{ unsigned? ~ ASCII_DIGIT+ }
 float               = @{ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ }
 binary_op           = _{ modulo | add | sub | mul | div | gte | gt | lte | lt | cmp_eq | neq | and | or }
 overloaded_op       =  { (field_access | name) ~ overloaded_ops ~ value }
