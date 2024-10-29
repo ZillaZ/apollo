@@ -1,10 +1,10 @@
-WHITESPACE = _{ " " | NEWLINE }
+WHITESPACE = _{ " " | NEWLINE | "\x09" }
 
 index_access        = _{ "[" ~ value ~ "]" }
 import              =  { "use" ~ (dyn | static) ~ namespace ~ ("::" ~ imported_fn)? }
 dyn                 =  { "dyn" }
 static              =  { "static" }
-name_str            = @{ (ASCII_ALPHA) ~ (ASCII_ALPHANUMERIC | "_" | arrow)* }
+name_str            = @{ (ASCII_ALPHA) ~ (ASCII_ALPHANUMERIC | "_" | "::")* }
 generic_id          =  { ASCII_ALPHA }
 program             = _{ SOI ~ expr+ ~ EOI }
 char                =  { "'" ~ ASCII ~ "'" }
@@ -12,7 +12,7 @@ array_type          =  { "array(" ~ datatype ~ value? ~ ")" }
 array               =  { array_type ~ "[" ~ (value ~ ","?)* ~ "]" }
 array_access        =  { (call | name) ~ index_access }
 string              = _{ (ASCII_ALPHANUMERIC | "*" | ";" | "(" | ")" | ":" | "=" | ">" | "[" | "]" | "." | "," | "%" | "\\" | "_" | "{" | "}" | "!")* }
-integer             =  @{ unsigned? ~ ASCII_DIGIT+ }
+integer             = @{ unsigned? ~ ASCII_DIGIT+ }
 float               = @{ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ }
 binary_op           = _{ modulo | add | sub | mul | div | gte | gt | lte | lt | cmp_eq | neq | and | or }
 overloaded_op       =  { (field_access | name) ~ overloaded_ops ~ value }
@@ -39,7 +39,7 @@ struct              =  { "struct" ~ name_str ~ "{" ~ (trait_field | field_decl)*
 field_decl          =  { name_str ~ dd ~ datatype }
 operation           =  { atom ~ (binary_op ~ atom)* }
 overloaded_ops      =  { add_to | sub_to | mul_to | div_to }
-expr                = _{ (for | while | lib_link | compiler_extension | trait | struct | import | overloaded_op | return | function | call | block | declaration | assignment | if | field_access) }
+expr                = _{ (for | while | lib_link | compiler_extension | trait | struct | import | impl | overloaded_op | return | function | call | block | declaration | assignment | if | field_access) }
 declaration         =  { let ~ name ~ (dd ~ datatype)? ~ eq ~ value }
 assignment          =  { (array_access | field_access | name) ~ eq ~ value }
 value               =  { (constructor | if | bool | field_access | array | call | array_access | string_value | char | operation | integer | float | name) ~ index_access* ~ type_casting? }
@@ -99,3 +99,5 @@ range               =  { value ~ range_type ~ value }
 range_type          =  { range_inclusive | range_exclusive }
 range_inclusive     =  { "..=" }
 range_exclusive     =  { ".." }
+impl                =  { "impl" ~ name ~ "for" ~ name ~ impl_block }
+impl_block          =  { "#" ~ "{" ~ expr* ~ "}" }

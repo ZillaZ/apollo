@@ -1,0 +1,6 @@
+fn fib(number: i4) -> i4 {
+	if number < 2 {
+		return number
+	}
+	return (fib(number-1) + fib(number-2))
+}

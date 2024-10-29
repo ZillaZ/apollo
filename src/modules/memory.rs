@@ -21,6 +21,8 @@ pub struct Memory<'a> {
     pub units: HashMap<Type<'a>, RValue<'a>>,
     pub continue_block: Option<Block<'a>>,
     pub blocks: HashMap<Block<'a>, bool>,
+    pub implementations: HashMap<String, Function<'a>>,
+    pub impls: HashMap<Type<'a>, Vec<(String, Function<'a>)>>,
     pub memory_tree: Vec<Box<Memory<'a>>>,
     pub extensions: HashMap<String, Box<dyn Fn(Vec<GccValues>) -> GccValues>>,
 }
@@ -46,6 +48,8 @@ impl<'a> Memory<'a> {
         let units = HashMap::new();
         let continue_block = None;
         let blocks = HashMap::new();
+        let implementations = HashMap::new();
+        let impls = HashMap::new();
         let memory_tree = Vec::new();
         let extensions = HashMap::new();
         Self {
@@ -65,6 +69,8 @@ impl<'a> Memory<'a> {
             index,
             units,
             continue_block,
+            implementations,
+            impls,
             blocks,
             memory_tree,
             extensions,

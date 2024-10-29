@@ -10,8 +10,8 @@ use std::rc::Rc;
 use super::memory::{self, Memory};
 use super::parser::Ast;
 use super::structs::{
-    self, AssignVar, Atom, Constructor, DataType, FieldAccessName, ForLoop, If, Name, Operation,
-    Overloaded, OverloadedOp, Range, RangeValue, RefOp, StructDecl, Value,
+    self, AssignVar, Atom, Constructor, DataType, FieldAccessName, ForLoop, If, Impl, Name,
+    Operation, Overloaded, OverloadedOp, Range, RangeValue, RefOp, StructDecl, Value,
 };
 use super::structs::{Expr, FunctionKind, LibLink, WhileLoop};
 use crate::modules::structs::{Field, Otherwise, RangeType};
@@ -180,6 +180,10 @@ impl<'a> GccContext<'a> {
         self.gen_void_type(memory);
     }
 
+    fn uuid(&'a self) -> String {
+        uuid::Uuid::new_v4().to_string()
+    }
+
     fn parse_expression(&'a self, ast: &Ast, memory: &mut Memory<'a>, block: &mut Block<'a>) {
         for expr in ast.expressions.iter() {
             let reference = &mut *memory;
@@ -220,13 +224,50 @@ impl<'a> GccContext<'a> {
                 Expr::Link(ref lib_link) => self.add_link(lib_link),
                 Expr::While(ref wl) => self.parse_while_loop(wl, block, ast, reference),
                 Expr::For(fl) => self.parse_for_loop(&mut fl.clone(), block, ast, reference),
+                Expr::Impl(implementation) => {
+                    self.parse_impl(implementation, block, ast, reference)
+                }
                 _ => continue,
             }
         }
     }
 
-    fn uuid(&'a self) -> String {
-        uuid::Uuid::new_v4().to_string()
+    fn parse_impl(
+        &'a self,
+        implementation: &Impl,
+        block: &mut Block<'a>,
+        ast: &Ast,
+        memory: &mut Memory<'a>,
+    ) {
+        self.parse_impl_block(implementation, ast, memory);
+    }
+
+    fn parse_impl_block(&'a self, implementation: &Impl, ast: &Ast, memory: &mut Memory<'a>) {
+        for expr in implementation.block.expr.clone() {
+            match *expr {
+                Expr::Function(mut function) => {
+                    let old = function.name.name.clone();
+                    function.name.name = format!(
+                        "{}{}{}",
+                        implementation.trait_name, implementation.struct_name, function.name.name
+                    );
+                    self.parse_function(&function, memory, ast);
+                    let function = memory.functions.get(&function.name.name).unwrap();
+                    memory
+                        .implementations
+                        .insert(implementation.struct_name.clone(), *function);
+                    let data_type = memory.datatypes.get(&implementation.struct_name).unwrap();
+                    let entry = memory
+                        .impls
+                        .entry(*data_type)
+                        .or_insert(vec![(old.clone(), *function)]);
+                    if entry.iter().find(|(x, _)| x == old.as_str()).is_none() {
+                        entry.push((old, *function));
+                    }
+                }
+                _ => todo!(),
+            }
+        }
     }
 
     fn parse_for_loop(
@@ -238,125 +279,106 @@ impl<'a> GccContext<'a> {
     ) {
         let function = block.get_function();
         let value = self.parse_value(&fl.range, block, memory, ast);
-        let mut iterable_value = GccValues::Nil;
         let datatype = match value {
             GccValues::Pair((ref left, _)) => left.rvalue().get_type(),
             GccValues::L(val) => {
-                let fields = memory
-                    .structs
-                    .get(&val.to_rvalue().get_type().is_struct().unwrap())
-                    .unwrap();
-                let index = fields.get("elements").unwrap();
-                let field = val
-                    .to_rvalue()
-                    .get_type()
-                    .is_struct()
+                let impls = memory.impls.get(&val.to_rvalue().get_type()).unwrap();
+                impls
+                    .iter()
+                    .filter(|(x, _)| x == "peek")
+                    .peekable()
+                    .peek()
                     .unwrap()
-                    .get_field(*index);
-                iterable_value = GccValues::R(val.access_field(None, field).to_rvalue());
-                self.context
-                    .new_array_access(
-                        None,
-                        iterable_value.rvalue(),
-                        self.parse_value(&Value::Int(0), block, memory, ast)
-                            .rvalue(),
-                    )
-                    .to_rvalue()
-                    .get_type()
+                    .1
+                    .get_return_type()
             }
             GccValues::R(val) => val.get_type(),
             _ => todo!(),
         };
-        let mut is_iterable = false;
-        let (start, end) = match value {
-            GccValues::Pair((left, right)) => (left, right),
-            GccValues::L(lvalue) => {
-                is_iterable = true;
-                let info = memory
-                    .structs
-                    .get(&lvalue.to_rvalue().get_type().is_struct().unwrap())
-                    .unwrap();
-                let field_index = info.get("length").unwrap();
-                let length = lvalue
-                    .to_rvalue()
-                    .get_type()
-                    .is_struct()
+        match value {
+            GccValues::R(_) => {
+                let (start, end) = match value {
+                    GccValues::Pair((left, right)) => (left, right),
+                    _ => todo!(),
+                };
+                println!("{:?} {:?}", start.rvalue(), end.rvalue());
+                let pivot = function.new_local(None, datatype, fl.pivot.clone());
+                memory
+                    .variables
+                    .get_mut(&memory.function_scope)
                     .unwrap()
-                    .get_field(*field_index);
-                let end = lvalue.to_rvalue().access_field(None, length);
-                let start = self.context.new_rvalue_from_int(end.get_type(), 0);
-                let start =
+                    .insert(fl.pivot.clone(), pivot);
+                block.add_assignment(None, pivot, start.rvalue());
+                let condition =
                     self.context
-                        .new_binary_op(None, BinaryOp::Minus, datatype, start, start);
-                (Box::new(GccValues::R(start)), Box::new(GccValues::R(end)))
+                        .new_comparison(None, ComparisonOp::Equals, pivot, end.rvalue());
+                let mut loop_block = function.new_block(self.uuid());
+                memory.blocks.insert(loop_block, false);
+                let index = function.new_local(None, start.rvalue().get_type(), self.uuid());
+                block.add_assignment(None, index, start.rvalue());
+                println!("{:?}", memory.continue_block);
+                let continue_block = function.new_block(self.uuid());
+                let condition_block = function.new_block(self.uuid());
+                condition_block.end_with_conditional(None, condition, continue_block, loop_block);
+                loop_block.add_assignment_op(
+                    None,
+                    pivot,
+                    BinaryOp::Plus,
+                    memory.units.get(&datatype).unwrap().to_rvalue(),
+                );
+                memory.blocks.insert(condition_block, true);
+                block.end_with_jump(None, condition_block);
+                self.parse_block(&fl.block, &mut loop_block, memory, ast);
+                memory.blocks.insert(loop_block, true);
+                loop_block.end_with_jump(None, condition_block);
+                *block = continue_block;
+            }
+            GccValues::L(value) => {
+                let impls = memory.impls.get(&value.to_rvalue().get_type()).unwrap();
+                let peek = impls.iter().find(|(x, _)| x == "peek").unwrap();
+                let end = impls.iter().find(|(x, _)| x == "ended").unwrap();
+                let start = self
+                    .context
+                    .new_call(None, peek.1, &[value.get_address(None)]);
+                let end = self
+                    .context
+                    .new_call(None, end.1, &[value.get_address(None)]);
+                let dt = <bool as Typeable>::get_type(self.context);
+                let condition = self.context.new_comparison(
+                    None,
+                    ComparisonOp::Equals,
+                    end,
+                    self.context.new_rvalue_from_int(dt, 1),
+                );
+                let mut loop_block = function.new_block(self.uuid());
+                memory.blocks.insert(loop_block, false);
+                let pivot = function.new_local(None, start.get_type(), self.uuid());
+                block.add_assignment(None, pivot, start);
+                memory
+                    .variables
+                    .get_mut(&memory.function_scope)
+                    .unwrap()
+                    .insert(fl.pivot.clone(), pivot);
+                println!("{:?}", memory.continue_block);
+                let continue_block = function.new_block(self.uuid());
+                let condition_block = function.new_block(self.uuid());
+                condition_block.end_with_conditional(None, condition, continue_block, loop_block);
+                println!("{:?}", impls);
+                let next = impls.iter().find(|(x, _)| x == "next").unwrap();
+                let next = self
+                    .context
+                    .new_call(None, next.1, &[value.get_address(None)]);
+                loop_block.add_assignment(None, pivot, next);
+                memory.blocks.insert(condition_block, true);
+                block.end_with_jump(None, condition_block);
+                self.parse_block(&fl.block, &mut loop_block, memory, ast);
+                memory.blocks.insert(loop_block, true);
+                loop_block.end_with_jump(None, condition_block);
+                *block = continue_block
             }
             _ => todo!(),
-        };
-        println!("{:?} {:?}", start.rvalue(), end.rvalue());
-        let pivot = function.new_local(None, datatype, fl.pivot.clone());
-        memory
-            .variables
-            .get_mut(&memory.function_scope)
-            .unwrap()
-            .insert(fl.pivot.clone(), pivot);
-        if is_iterable {
-            let val = self.context.new_array_access(
-                None,
-                iterable_value.rvalue(),
-                self.parse_value(&Value::Int(0), block, memory, ast)
-                    .rvalue(),
-            );
-            println!("Iterable start is {:?}", val);
-            block.add_assignment(None, pivot, val);
-            println!("Is iterable");
-        } else {
-            block.add_assignment(None, pivot, start.rvalue());
         }
-        let mut loop_block = function.new_block(self.uuid());
-        memory.blocks.insert(loop_block, false);
-        let index = function.new_local(None, start.rvalue().get_type(), self.uuid());
-        block.add_assignment(None, index, start.rvalue());
-        println!("{:?}", memory.continue_block);
-        let continue_block = function.new_block(self.uuid());
-        let condition_block = function.new_block(self.uuid());
-        if is_iterable {
-            let condition =
-                self.context
-                    .new_comparison(None, ComparisonOp::Equals, index, end.rvalue());
-            condition_block.end_with_conditional(None, condition, continue_block, loop_block);
-            loop_block.add_assignment_op(
-                None,
-                index,
-                BinaryOp::Plus,
-                memory
-                    .units
-                    .get(&index.to_rvalue().get_type())
-                    .unwrap()
-                    .to_rvalue(),
-            );
-            let value =
-                self.context
-                    .new_array_access(None, iterable_value.rvalue(), index.to_rvalue());
-            loop_block.add_assignment(None, pivot, value.to_rvalue());
-        } else {
-            let condition =
-                self.context
-                    .new_comparison(None, ComparisonOp::Equals, pivot, end.rvalue());
-            condition_block.end_with_conditional(None, condition, continue_block, loop_block);
-            loop_block.add_assignment_op(
-                None,
-                pivot,
-                BinaryOp::Plus,
-                memory.units.get(&datatype).unwrap().to_rvalue(),
-            );
-        }
-        memory.blocks.insert(condition_block, true);
-        block.end_with_jump(None, condition_block);
         memory.blocks.insert(*block, true);
-        self.parse_block(&fl.block, &mut loop_block, memory, ast);
-        loop_block.end_with_jump(None, condition_block);
-        memory.blocks.insert(loop_block, true);
-        *block = continue_block;
     }
 
     fn parse_while_loop(
@@ -511,7 +533,7 @@ impl<'a> GccContext<'a> {
             new_memory.functions.iter().for_each(|(name, function)| {
                 memory
                     .functions
-                    .insert(format!("{}->{}", base_name, name), *function);
+                    .insert(format!("{}::{}", base_name, name), *function);
             });
             new_memory.structs.iter().for_each(|(r#struct, fields)| {
                 memory.structs.insert(*r#struct, fields.clone());
@@ -1287,6 +1309,7 @@ impl<'a> GccContext<'a> {
             return GccValues::R(rvalue);
         }
         if !memory.functions.contains_key(&call.name.name) {
+            println!("{}", call.name.name);
             self.parse_function(
                 ast.context.functions.get(&call.name.name).unwrap(),
                 memory,

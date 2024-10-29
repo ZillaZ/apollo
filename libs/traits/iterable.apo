@@ -1,0 +1,9 @@
+trait Iterable {}
+
+fn next(iterable: 'Iterable) -> Any {
+
+}
+
+fn prev(iterable: 'Iterable) -> Any {
+
+}

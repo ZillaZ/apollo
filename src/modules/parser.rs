@@ -128,6 +128,7 @@ impl NoirParser {
                     Expr::While(self.build_while_loop(&mut pair.into_inner(), context))
                 }
                 Rule::r#for => Expr::For(self.build_for_loop(&mut pair.into_inner(), context)),
+                Rule::r#impl => Expr::Impl(self.build_impl(&mut pair.into_inner(), context)),
                 Rule::EOI => continue,
                 rule => unreachable!("{:?}", rule),
             };
@@ -135,6 +136,32 @@ impl NoirParser {
         }
 
         expressions
+    }
+
+    fn build_impl(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Impl {
+        let mut switched = false;
+        let mut trait_name = String::new();
+        let mut struct_name = String::new();
+        let mut block = Block::default();
+        for pair in pairs {
+            match pair.as_rule() {
+                Rule::name => {
+                    if switched {
+                        struct_name = pair.as_str().into();
+                    } else {
+                        trait_name = pair.as_str().into();
+                        switched = true;
+                    }
+                }
+                Rule::impl_block => block = self.build_block(&mut pair.into_inner(), context),
+                _ => todo!(),
+            }
+        }
+        Impl {
+            trait_name,
+            struct_name,
+            block,
+        }
     }
 
     fn build_for_loop(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> ForLoop {

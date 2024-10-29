@@ -275,6 +275,13 @@ pub struct Atom {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct Impl {
+    pub trait_name: String,
+    pub struct_name: String,
+    pub block: Block,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum Otherwise {
     Block(Block),
     If(If),
@@ -383,6 +390,7 @@ pub enum Expr {
     Link(LibLink),
     While(WhileLoop),
     For(ForLoop),
+    Impl(Impl),
 }
 
 impl Expr {
