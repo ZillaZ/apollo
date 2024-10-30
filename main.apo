@@ -1,6 +1,6 @@
 use static std::threads::threads
 
-link with time
+link with "time.so"
 
 extern fn instant() -> Any {}
 extern fn time_since(instant: Any) -> f4 {}

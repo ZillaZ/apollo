@@ -203,7 +203,7 @@ impl NoirParser {
         let mut eval = pairs.peekable();
         let eval = eval.peek().unwrap();
         LibLink {
-            lib_name: eval.as_str().trim().into(),
+            lib_name: eval.as_str()[1..eval.as_str().len() - 1].trim().into(),
         }
     }
 
@@ -445,6 +445,7 @@ impl NoirParser {
     fn build_value(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Value {
         let mut value = Value::Int(0);
         let mut op_count = 0;
+        let mut ref_op = None;
         for eval in pairs {
             match eval.as_rule() {
                 Rule::operation => {
@@ -460,13 +461,16 @@ impl NoirParser {
                 Rule::name => {
                     value = {
                         let name = Value::Name(self.build_name(&mut eval.into_inner(), context));
-                        match name {
+                        let name = match name {
                             Value::Name(mut name) => {
+                                name.op = ref_op.clone();
                                 name.op_count += op_count;
                                 Value::Name(name)
                             }
                             _ => unreachable!(),
-                        }
+                        };
+                        println!("{:?}", name);
+                        name
                     }
                 }
                 Rule::atom => {
@@ -509,7 +513,14 @@ impl NoirParser {
                 Rule::range => {
                     value = Value::Range(self.build_range(&mut eval.into_inner(), context))
                 }
-                Rule::deref => op_count += 1,
+                Rule::deref => {
+                    op_count += 1;
+                    ref_op = Some(RefOp::Dereference);
+                }
+                Rule::r#ref => {
+                    op_count += 1;
+                    ref_op = Some(RefOp::Reference);
+                }
                 rule => unreachable!("{:?}", rule),
             };
         }

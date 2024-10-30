@@ -414,8 +414,17 @@ impl<'a> GccContext<'a> {
     }
 
     fn add_link(&'a self, lib_link: &LibLink) {
-        self.context
-            .add_driver_option(format!("-l{}", lib_link.lib_name));
+        let (_, path) = std::env::vars().find(|(x, _)| x == "APOLLO_LIBS").unwrap();
+        println!("{:?}", format!("-L{} -l:{}", path, lib_link.lib_name));
+        if lib_link.lib_name.ends_with(".o") || lib_link.lib_name.ends_with(".a") {
+            self.context
+                .add_driver_option(format!("-L{} -l:{}", path, lib_link.lib_name));
+        } else {
+            self.context.add_driver_option(format!(
+                "-l{}",
+                lib_link.lib_name.split(".").peekable().peek().unwrap()
+            ))
+        }
     }
 
     fn setup_entry_point(&'a self, ast: &Ast, memory: &mut Memory<'a>) -> Block<'a> {

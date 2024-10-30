@@ -1,4 +1,4 @@
-link with threads
+link with "threads.so"
 
 extern fn thread_spawn(id: &u8, function: Any, args: Any) {}
 extern fn thread_join(id: u8, result: &Any) {}
