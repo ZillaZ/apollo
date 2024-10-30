@@ -41,6 +41,7 @@ pub struct BinaryOp {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Type {
     pub is_ref: bool,
+    pub ref_count: u8,
     pub datatype: DataType,
 }
 
@@ -48,6 +49,7 @@ impl Default for Type {
     fn default() -> Self {
         Self {
             is_ref: false,
+            ref_count: 0,
             datatype: DataType::Int(0),
         }
     }
@@ -91,6 +93,7 @@ pub enum RefOp {
 pub struct Name {
     pub name: String,
     pub op: Option<RefOp>,
+    pub op_count: u8,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -265,7 +268,7 @@ pub struct Function {
 pub struct Declaration {
     pub name: Name,
     pub datatype: Option<Type>,
-    pub value: Value,
+    pub value: Option<Value>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

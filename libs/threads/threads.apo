@@ -1,0 +1,5 @@
+link with threads
+
+extern fn thread_spawn(id: &u8, function: Any, args: Any) {}
+extern fn thread_join(id: u8, result: &Any) {}
+extern fn thread_exit(value: Any) {}

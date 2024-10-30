@@ -264,6 +264,7 @@ impl NoirParser {
         let mut name = String::new();
         let mut datatype = Type {
             is_ref: false,
+            ref_count: 0,
             datatype: DataType::Int(0),
         };
         for pair in pairs {
@@ -321,6 +322,7 @@ impl NoirParser {
         let mut lhs = OverloadedLHS::Name(Name {
             name: String::new(),
             op: None,
+            op_count: 0,
         });
         let mut op = OverloadedOp::Add;
         let mut rhs = Value::Int(0);
@@ -363,6 +365,7 @@ impl NoirParser {
         let mut var = AssignVar::Name(Name {
             name: String::new(),
             op: None,
+            op_count: 0,
         });
         let mut value = Value::Int(0);
         for pair in pairs {
@@ -574,6 +577,7 @@ impl NoirParser {
                 name: FieldAccessName::Name(Name {
                     name: String::new(),
                     op: None,
+                    op_count: 0,
                 }),
                 next: None,
             })
@@ -717,6 +721,7 @@ impl NoirParser {
             name: Name {
                 name: String::new(),
                 op: None,
+                op_count: 0,
             },
             args: Vec::new(),
         };
@@ -739,6 +744,7 @@ impl NoirParser {
             name: Name {
                 name: String::new(),
                 op: None,
+                op_count: 0,
             },
             args: Vec::new(),
             return_type: None,
@@ -807,15 +813,16 @@ impl NoirParser {
             name: Name {
                 name: String::new(),
                 op: None,
+                op_count: 0,
             },
             datatype: None,
-            value: Value::Int(0),
+            value: None,
         };
         for pair in pairs {
             match pair.as_rule() {
                 Rule::name => declaration.name = self.build_name(&mut pair.into_inner(), context),
                 Rule::value => {
-                    declaration.value = self.build_value(&mut pair.into_inner(), context)
+                    declaration.value = Some(self.build_value(&mut pair.into_inner(), context))
                 }
                 Rule::datatype => {
                     declaration.datatype =
@@ -869,15 +876,23 @@ impl NoirParser {
     fn build_name(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Name {
         let mut name = String::new();
         let mut op = None;
+        let mut op_count = 0;
         for pair in pairs {
             match pair.as_rule() {
                 Rule::name_str => name = pair.as_str().trim().into(),
-                Rule::r#ref => op = Some(RefOp::Reference),
-                Rule::deref => op = Some(RefOp::Dereference),
+                Rule::r#ref => {
+                    op = Some(RefOp::Reference);
+                    op_count += 1;
+                }
+                Rule::deref => {
+                    op = Some(RefOp::Dereference);
+                    op_count += 1;
+                }
                 _ => unreachable!(),
             }
         }
-        Name { name, op }
+        println!("count for {} is {}", name, op_count);
+        Name { name, op, op_count }
     }
 
     fn build_param(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Parameter {
@@ -895,6 +910,7 @@ impl NoirParser {
             name: Name {
                 name: String::new(),
                 op: None,
+                op_count: 0,
             },
             datatype: Type::default(),
         };
@@ -916,6 +932,7 @@ impl NoirParser {
 
     fn build_datatype(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Type {
         let mut is_ref = false;
+        let mut ref_count = 0;
         let mut datatype = DataType::Int(0);
         for pair in pairs {
             match pair.as_rule() {
@@ -943,11 +960,18 @@ impl NoirParser {
                 Rule::bool_type => datatype = DataType::Bool,
                 Rule::trait_type => datatype = DataType::Trait(pair.as_str()[1..].into()),
                 Rule::any_type => datatype = DataType::Any,
-                Rule::r#ref => is_ref = true,
+                Rule::r#ref => {
+                    is_ref = true;
+                    ref_count += 1;
+                }
                 rule => unreachable!("Got rule {:?}", rule),
             };
         }
-        Type { is_ref, datatype }
+        Type {
+            is_ref,
+            ref_count,
+            datatype,
+        }
     }
 
     fn build_struct_type(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> String {

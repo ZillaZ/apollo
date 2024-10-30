@@ -155,18 +155,26 @@ impl<'a> GccContext<'a> {
         let float_type = <f32 as Typeable>::get_type(self.context);
         let uint_type = <u32 as Typeable>::get_type(self.context);
         let ulong_type = <u64 as Typeable>::get_type(self.context);
+        let ulong_int_type = self.context.new_c_type(gccjit::CType::UInt128t);
         memory.datatypes.insert("i4".into(), int_type);
         memory.datatypes.insert("i8".into(), long_type);
         memory.datatypes.insert("f4".into(), float_type);
         memory.datatypes.insert("u3".into(), uint_type);
         memory.datatypes.insert("u8".into(), ulong_type);
+        memory.datatypes.insert("u16".into(), ulong_int_type);
+    }
+
+    fn is_pointer(&'a self, r#type: &Type<'a>, memory: &mut Memory<'a>) -> bool {
+        memory.pointer_types.contains(r#type)
     }
 
     fn gen_text_types(&'a self, memory: &mut Memory<'a>) {
         let char_type = <char as Typeable>::get_type(self.context);
-        let string_type = char_type.make_pointer();
+        let string_type = self.context.new_string_literal("").get_type();
         memory.datatypes.insert("char".into(), char_type);
         memory.datatypes.insert("string".into(), string_type);
+        memory.pointer_types.insert(string_type.make_const());
+        memory.pointer_types.insert(string_type);
     }
 
     fn gen_void_type(&'a self, memory: &mut Memory<'a>) {
@@ -1053,6 +1061,9 @@ impl<'a> GccContext<'a> {
             false,
         );
         memory
+            .function_addresses
+            .insert(function.name.name.clone(), new_function.get_address(None));
+        memory
             .functions
             .insert(function.name.name.clone(), new_function);
         let mut new_block = new_function.new_block(&format!("{}_block", function.name.name));
@@ -1078,6 +1089,9 @@ impl<'a> GccContext<'a> {
             &function.name.name,
             false,
         );
+        memory
+            .function_addresses
+            .insert(function.name.name.clone(), new_function.get_address(None));
         memory
             .functions
             .insert(function.name.name.clone(), new_function);
@@ -1109,11 +1123,10 @@ impl<'a> GccContext<'a> {
     }
 
     fn parse_datatype(&'a self, datatype: &structs::Type, memory: &mut Memory<'a>) -> Type<'_> {
-        let string_type = self.context.new_string_literal("test").get_type();
         let r#type = match &datatype.datatype {
             DataType::Bool => <bool as Typeable>::get_type(&self.context),
-            DataType::Int(bytecount) => self.context.new_int_type(*bytecount as i32, true),
-            DataType::UInt(bytecount) => self.context.new_int_type(*bytecount as i32, false),
+            DataType::Int(bytecount) => *memory.datatypes.get(&format!("i{}", bytecount)).unwrap(),
+            DataType::UInt(bytecount) => *memory.datatypes.get(&format!("u{}", bytecount)).unwrap(),
             DataType::Array(array_type) => {
                 let element_type = self.parse_datatype(&array_type.data_type, memory);
                 match array_type.size.clone() {
@@ -1135,7 +1148,10 @@ impl<'a> GccContext<'a> {
                     }
                 }
             }
-            DataType::String => string_type,
+            DataType::String => {
+                println!("getting string type from memory");
+                *memory.datatypes.get("string").unwrap()
+            }
             DataType::Char => <char as Typeable>::get_type(&self.context),
             DataType::StructType(ref name) => {
                 *if let Some(val) = memory.datatypes.get(name) {
@@ -1150,7 +1166,11 @@ impl<'a> GccContext<'a> {
             _ => unreachable!(),
         };
         if datatype.is_ref {
-            r#type.make_pointer()
+            let mut dt = r#type.make_pointer();
+            for _ in 0..datatype.ref_count - 1 {
+                dt = r#type.make_pointer();
+            }
+            dt
         } else {
             r#type
         }
@@ -1213,14 +1233,14 @@ impl<'a> GccContext<'a> {
         ast: &Ast,
     ) {
         match declaration.value {
-            Value::Constructor(ref constructor) => {
+            Some(Value::Constructor(ref constructor)) => {
                 let mut map = HashMap::new();
                 map.insert(declaration.name.name.clone(), constructor.name.clone());
                 memory
                     .constructors
                     .insert(memory.function_scope.clone(), map);
             }
-            Value::Call(ref call) => {
+            Some(Value::Call(ref call)) => {
                 if let Some(function) = ast.context.functions.get(&call.name.name) {
                     if let Some(ref function_return) = function.return_type {
                         if let DataType::StructType(ref name) = function_return.datatype {
@@ -1235,19 +1255,25 @@ impl<'a> GccContext<'a> {
             }
             _ => (),
         };
-        let value = self.parse_value(&declaration.value, block, memory, ast);
+        let value = if let Some(ref value) = declaration.value {
+            Some(self.parse_value(value, block, memory, ast))
+        } else {
+            None
+        };
         let function = block.get_function();
         if let Some(ref dt) = declaration.datatype {
             let data_type = self.parse_datatype(dt, memory);
-            let value = self.new_cast(data_type, &value, memory);
             let lvalue = function.new_local(None, data_type, &declaration.name.name);
-            block.add_assignment(None, lvalue, value);
+            if value.is_some() {
+                let value = self.new_cast(data_type, &value.unwrap(), memory);
+                block.add_assignment(None, lvalue, value);
+            }
             let variables = memory.variables.get_mut(&memory.function_scope).unwrap();
             variables.insert(declaration.name.name.clone(), lvalue);
         } else {
-            let dt = memory.unconst_type(value.rvalue().get_type());
+            let dt = memory.unconst_type(value.as_ref().unwrap().rvalue().get_type());
             let lvalue = function.new_local(None, dt, &declaration.name.name);
-            block.add_assignment(None, lvalue, value.rvalue());
+            block.add_assignment(None, lvalue, value.as_ref().unwrap().rvalue());
             let variables = memory.variables.get_mut(&memory.function_scope).unwrap();
             variables.insert(declaration.name.name.clone(), lvalue);
         }
@@ -1351,13 +1377,24 @@ impl<'a> GccContext<'a> {
     ) -> RValue<'a> {
         let mut rtn = right.rvalue();
         let name = memory.trait_types.get_mut(&left_type);
+
         if name.is_some() {
             let name = name.unwrap().clone();
             rtn = self.struct_to_trait(right.rvalue(), &name, left_type, memory);
         } else if !left_type.is_compatible_with(rtn.get_type())
             && left_type
                 .is_compatible_with(<() as Typeable>::get_type(&self.context).make_pointer())
+            && !self.is_pointer(&rtn.get_type(), memory)
         {
+            for value in memory.pointer_types.iter() {
+                println!(
+                    "{:?} == {:?} | {}",
+                    rtn.get_type(),
+                    value,
+                    rtn.get_type() == *value
+                );
+            }
+            println!("converting {:?} to {:?}", rtn.get_type(), left_type);
             rtn = self
                 .context
                 .new_cast(None, right.get_reference(), left_type);
@@ -1521,14 +1558,14 @@ impl<'a> GccContext<'a> {
                 .expect("Refered datatype does not exist");
             return GccValues::Type(*datatype);
         }
-        if let Some(var) = variables.get(&name.name) {
+        let mut value = if let Some(var) = variables.get(&name.name) {
             self.access_name(var, name)
+        } else if let Some(address) = memory.function_addresses.get(&name.name) {
+            GccValues::R(*address)
         } else {
-            panic!(
-                "Variable {} not found. Working on {}",
-                name.name, memory.function_scope
-            )
-        }
+            panic!("Variable {} not found", name.name)
+        };
+        value
     }
 
     fn access_name(&self, var: &LValue<'a>, name: &Name) -> GccValues<'a> {
@@ -1545,10 +1582,10 @@ impl<'a> GccContext<'a> {
     }
 
     fn parse_string(&self, string: &str) -> GccValues<'_> {
-        GccValues::R(
-            self.context
-                .new_string_literal(&string[1..string.len() - 1]),
-        )
+        let value = self
+            .context
+            .new_string_literal(&string[1..string.len() - 1]);
+        GccValues::R(value)
     }
 
     fn parse_int(&self, number: i32) -> GccValues<'_> {

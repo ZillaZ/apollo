@@ -19,10 +19,10 @@
 (setq apollo-imported "::{\\([[:space:]]*\\(\\w\\|_\\)+\/\\(\\w\\|_\\)+[[:space:]]*\\)+}\\|\\(?:::\\)\\(\\w\\|_\\)+\n")
 
 (defvar apollo-keywords nil "Apollo keywords.")
-(setq apollo-keywords '("as" "extern" "new" "link" "with" "fn" "if" "else" "return" "trait" "struct" "use" "let"))
+(setq apollo-keywords '("impl" "as" "extern" "new" "link" "with" "fn" "if" "else" "return" "trait" "struct" "use" "let"))
 
 (defvar apollo-types nil "Apollo types.")
-(setq apollo-types '("f1" "f2" "f4" "f8" "i1" "i2" "i4" "i8" "char" "string" "array" "bool"))
+(setq apollo-types '("f1" "f2" "f4" "f8" "i1" "i2" "i4" "i8" "u1" "u2" "u4" "u8" "u16" "char" "string" "array" "bool"))
 
 (defvar apollo-custom-types nil "Apollo return types.")
 (setq apollo-custom-types (concat cap-test "\\w+"))
