@@ -96,6 +96,16 @@ pub struct Name {
     pub op_count: u8,
 }
 
+impl Default for Name {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            op: None,
+            op_count: 0,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Parameter {
     Name(Name),
@@ -149,6 +159,8 @@ pub enum FieldAccessName {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct FieldAccess {
+    pub op: Option<RefOp>,
+    pub op_count: u8,
     pub name: FieldAccessName,
     pub next: Option<Box<FieldAccess>>,
 }

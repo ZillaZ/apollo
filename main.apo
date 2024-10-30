@@ -1,15 +1,44 @@
 use static std::threads::threads
 
-fn hello(name: Any) {
-  printf("Hello, %s!\n", name as string)
-  threads::thread_exit(name)
+link with time
+
+extern fn instant() -> Any {}
+extern fn time_since(instant: Any) -> f4 {}
+
+struct ThreadArgs {
+  name: string
+  count: &i4
+}
+
+fn hello(object: Any) {
+  let obj : &ThreadArgs = object
+  let instant = instant()
+  while (true) {
+    if time_since(&instant) > 0.2 {
+      instant = instant()
+      printf("Hello from %s! Count is %d\n", obj.name, obj.*count)
+      obj.*count += 1
+    }
+  }
+  threads::thread_exit(obj.name)
   return
 }
 
-let id : u8 = 2469
-let name = "Lucas"
-let result : string
+let id_one : u8 = 1
+let count : i4 = 0
+let name_one = new ThreadArgs {
+  name: "thread one"
+  count: &count
+}
+let result_one : string
+let id_two : u8 = 2
+let name_two = new ThreadArgs {
+  name: "thread two"
+  count: &count
+}
+let result_two : string
 
-threads::thread_spawn(&id, hello, name)
-threads::thread_join(id, &result)
-printf("Result is %s\n", result)
+threads::thread_spawn(&id_one, hello, name_one)
+threads::thread_spawn(&id_two, hello, name_two)
+threads::thread_join(id_one, &result_one)
+threads::thread_join(id_two, &result_two)

@@ -444,6 +444,7 @@ impl NoirParser {
 
     fn build_value(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Value {
         let mut value = Value::Int(0);
+        let mut op_count = 0;
         for eval in pairs {
             match eval.as_rule() {
                 Rule::operation => {
@@ -456,7 +457,18 @@ impl NoirParser {
                     value =
                         Value::Block(Box::new(self.build_block(&mut eval.into_inner(), context)))
                 }
-                Rule::name => value = Value::Name(self.build_name(&mut eval.into_inner(), context)),
+                Rule::name => {
+                    value = {
+                        let name = Value::Name(self.build_name(&mut eval.into_inner(), context));
+                        match name {
+                            Value::Name(mut name) => {
+                                name.op_count += op_count;
+                                Value::Name(name)
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                }
                 Rule::atom => {
                     value = Value::Atom(Box::new(self.build_atom(&mut eval.into_inner(), context)))
                 }
@@ -497,6 +509,7 @@ impl NoirParser {
                 Rule::range => {
                     value = Value::Range(self.build_range(&mut eval.into_inner(), context))
                 }
+                Rule::deref => op_count += 1,
                 rule => unreachable!("{:?}", rule),
             };
         }
@@ -553,35 +566,44 @@ impl NoirParser {
     fn build_field_access(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> FieldAccess {
         let mut head: Option<Box<FieldAccess>> = None;
         let mut prev = &mut head;
+        let mut op_count = 0;
+        let mut ref_op = None;
 
         for pair in pairs {
-            let name = match pair.as_rule() {
+            let mut name = FieldAccessName::Name(Name::default());
+            match pair.as_rule() {
                 Rule::name => {
-                    FieldAccessName::Name(self.build_name(&mut pair.into_inner(), context))
+                    name = FieldAccessName::Name(self.build_name(&mut pair.into_inner(), context));
                 }
                 Rule::call => {
-                    FieldAccessName::Call(self.build_call(&mut pair.into_inner(), context))
+                    name = FieldAccessName::Call(self.build_call(&mut pair.into_inner(), context));
                 }
-                Rule::array_access => FieldAccessName::ArrayAccess(
-                    self.build_array_access(&mut pair.into_inner(), context),
-                ),
+                Rule::array_access => {
+                    name = FieldAccessName::ArrayAccess(
+                        self.build_array_access(&mut pair.into_inner(), context),
+                    )
+                }
+                Rule::r#ref => {
+                    ref_op = Some(RefOp::Reference);
+                    op_count += 1;
+                }
+                Rule::deref => {
+                    ref_op = Some(RefOp::Dereference);
+                    op_count += 1;
+                }
                 rule => unreachable!("Found rule {:?}", rule),
             };
-            let next = Box::new(FieldAccess { name, next: None });
+            let next = Box::new(FieldAccess {
+                name,
+                next: None,
+                op: ref_op.clone(),
+                op_count,
+            });
             prev.replace(next.clone());
             prev = &mut prev.as_mut().expect("prev is sus").next;
         }
 
-        *head.unwrap_or_else(|| {
-            Box::new(FieldAccess {
-                name: FieldAccessName::Name(Name {
-                    name: String::new(),
-                    op: None,
-                    op_count: 0,
-                }),
-                next: None,
-            })
-        })
+        *head.unwrap()
     }
 
     fn build_constructor(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Constructor {
@@ -862,7 +884,6 @@ impl NoirParser {
 
     fn build_integer(&self, pair: Pair<Rule>, context: &mut AstContext) -> Value {
         let clone = pair.clone();
-        println!("PAIR: {}", &pair.as_str().trim());
         if clone.into_inner().peek().is_some() {
             return Value::UInt(pair.as_str()[1..].parse().unwrap());
         }
@@ -891,7 +912,6 @@ impl NoirParser {
                 _ => unreachable!(),
             }
         }
-        println!("count for {} is {}", name, op_count);
         Name { name, op, op_count }
     }
 
@@ -983,7 +1003,6 @@ impl NoirParser {
         let mut bytecount = 4;
         let mut is_unsigned = false;
         for pair in pairs {
-            println!("PAIR: {}", pair.as_str());
             match pair.as_rule() {
                 Rule::integer => bytecount = pair.as_str().trim().parse().unwrap(),
                 Rule::unsigned => is_unsigned = true,

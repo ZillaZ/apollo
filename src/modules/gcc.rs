@@ -837,12 +837,12 @@ impl<'a> GccContext<'a> {
             FieldAccessName::Name(ref name) => match aux {
                 Some(val) => {
                     println!("some");
-                    let value = if let Some(field) = val.rvalue().get_type().is_struct() {
+                    let mut value = if let Some(field) = val.rvalue().get_type().is_struct() {
                         println!("here");
                         let struct_fields = memory.structs.get(&field).unwrap();
                         let field_index = struct_fields.get(&name.name).unwrap();
                         let field = field.get_field(*field_index);
-                        GccValues::L(val.dereference().access_field(None, field))
+                        GccValues::R(val.dereference().access_field(None, field).to_rvalue())
                     } else if let Some(field) = val
                         .rvalue()
                         .dereference(None)
@@ -853,18 +853,25 @@ impl<'a> GccContext<'a> {
                         let struct_fields = memory.structs.get(&field).unwrap();
                         let field_index = struct_fields.get(&name.name).unwrap();
                         let field = field.get_field(*field_index);
-                        GccValues::L(val.rvalue().dereference(None).access_field(None, field))
+                        GccValues::R(
+                            val.rvalue()
+                                .dereference(None)
+                                .access_field(None, field)
+                                .to_rvalue(),
+                        )
                     } else {
                         panic!("xiiikk")
                     };
-                    match name.op {
-                        Some(RefOp::Reference) => GccValues::R(value.get_reference()),
-                        Some(RefOp::Dereference) => GccValues::L(value.dereference()),
-                        None => value,
+                    for _ in 0..name.op_count {
+                        value = match name.op {
+                            Some(RefOp::Reference) => GccValues::R(value.get_reference()),
+                            Some(RefOp::Dereference) => GccValues::L(value.dereference()),
+                            None => value,
+                        };
                     }
+                    value
                 }
                 None => {
-                    println!("none");
                     let var = memory
                         .variables
                         .get(&memory.function_scope)
@@ -978,7 +985,6 @@ impl<'a> GccContext<'a> {
                 _ => todo!(),
             },
             _ => {
-                println!("{:?}", array.array_type.size);
                 todo!();
             }
         };
@@ -1143,15 +1149,11 @@ impl<'a> GccContext<'a> {
                         self.context.new_array_type(None, element_type, size as u64)
                     }
                     _ => {
-                        println!("{:?}", array_type.size);
                         todo!();
                     }
                 }
             }
-            DataType::String => {
-                println!("getting string type from memory");
-                *memory.datatypes.get("string").unwrap()
-            }
+            DataType::String => *memory.datatypes.get("string").unwrap(),
             DataType::Char => <char as Typeable>::get_type(&self.context),
             DataType::StructType(ref name) => {
                 *if let Some(val) = memory.datatypes.get(name) {
@@ -1335,7 +1337,6 @@ impl<'a> GccContext<'a> {
             return GccValues::R(rvalue);
         }
         if !memory.functions.contains_key(&call.name.name) {
-            println!("{}", call.name.name);
             self.parse_function(
                 ast.context.functions.get(&call.name.name).unwrap(),
                 memory,
@@ -1365,7 +1366,7 @@ impl<'a> GccContext<'a> {
             let parameter = params.get_mut(i).unwrap();
             *parameter = self.new_cast(declared_type, &args[i], memory);
         }
-        println!("{:?}", params);
+
         GccValues::R(self.context.new_call(None, function, &params))
     }
 
@@ -1386,15 +1387,6 @@ impl<'a> GccContext<'a> {
                 .is_compatible_with(<() as Typeable>::get_type(&self.context).make_pointer())
             && !self.is_pointer(&rtn.get_type(), memory)
         {
-            for value in memory.pointer_types.iter() {
-                println!(
-                    "{:?} == {:?} | {}",
-                    rtn.get_type(),
-                    value,
-                    rtn.get_type() == *value
-                );
-            }
-            println!("converting {:?} to {:?}", rtn.get_type(), left_type);
             rtn = self
                 .context
                 .new_cast(None, right.get_reference(), left_type);
