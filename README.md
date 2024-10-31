@@ -44,5 +44,4 @@ let array = array(i4)[1 2 3]
 - Comptime memory management
 - Parallel computing support (Threads and Forks)
 - Improve operations parsing
-- Implement loops
 - Refactor the entire codebase (it is pretty ugly...)
