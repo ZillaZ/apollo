@@ -41,7 +41,6 @@ let array = array(i4)[1 2 3]
 ```
 
 # Todo
-- Comptime memory management
-- Parallel computing support (Threads and Forks)
-- Improve operations parsing
+- Borrow checker
+- Parallel computing support (Threads)
 - Refactor the entire codebase (it is pretty ugly...)
