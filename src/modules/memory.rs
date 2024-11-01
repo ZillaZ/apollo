@@ -1,7 +1,7 @@
-use gccjit::{Block, Function, LValue, RValue, Struct, Type};
+use gccjit::{Block, Field, Function, LValue, RValue, Struct, Type};
 use std::collections::{HashMap, HashSet};
 
-use super::gcc::{GccContext, GccValues};
+use super::gcc::GccValues;
 
 pub struct Memory<'a> {
     pub name: String,
@@ -21,6 +21,7 @@ pub struct Memory<'a> {
     pub units: HashMap<Type<'a>, RValue<'a>>,
     pub continue_block: Option<Block<'a>>,
     pub blocks: HashMap<Block<'a>, bool>,
+    pub field_types: HashMap<Field<'a>, Type<'a>>,
     pub implementations: HashMap<String, Function<'a>>,
     pub impls: HashMap<Type<'a>, Vec<(String, Function<'a>)>>,
     pub function_addresses: HashMap<String, RValue<'a>>,
@@ -50,6 +51,7 @@ impl<'a> Memory<'a> {
         let units = HashMap::new();
         let continue_block = None;
         let blocks = HashMap::new();
+        let field_types = HashMap::new();
         let implementations = HashMap::new();
         let impls = HashMap::new();
         let function_addresses = HashMap::new();
@@ -77,6 +79,7 @@ impl<'a> Memory<'a> {
             impls,
             function_addresses,
             blocks,
+            field_types,
             pointer_types,
             memory_tree,
             extensions,
