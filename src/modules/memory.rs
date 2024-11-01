@@ -5,7 +5,7 @@ use super::gcc::{GccContext, GccValues};
 
 pub struct Memory<'a> {
     pub name: String,
-    pub last_block: Option<Block<'a>>,
+    pub last_block: Option<(Block<'a>, Block<'a>)>,
     pub variables: HashMap<String, HashMap<String, LValue<'a>>>,
     pub functions: HashMap<String, Function<'a>>,
     pub builtins: Vec<String>,

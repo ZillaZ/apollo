@@ -83,7 +83,11 @@ impl NoirParser {
         let mut final_path = Vec::new();
         final_path.push(match names[0] {
             "std" => std::env::var("APOLLO_LIBS").unwrap(),
-            _ => std::env::current_dir().unwrap().to_str().unwrap().into(),
+            _ => format!(
+                "{}/{}",
+                std::env::current_dir().unwrap().to_str().unwrap(),
+                names[0]
+            ),
         });
         for i in 1..names.len() {
             final_path.push(names[i].to_string());
@@ -446,14 +450,25 @@ impl NoirParser {
         let mut value = Value::Int(0);
         let mut op_count = 0;
         let mut ref_op = None;
+        let mut neg = false;
         for eval in pairs {
             match eval.as_rule() {
+                Rule::unary_minus => neg = true,
                 Rule::operation => {
                     value = Value::Operation(Box::new(
                         self.build_operation(&mut eval.into_inner(), context),
                     ))
                 }
-                Rule::call => value = Value::Call(self.build_call(&mut eval.into_inner(), context)),
+                Rule::call => {
+                    let aux = Value::Call(self.build_call(&mut eval.into_inner(), context));
+                    match aux {
+                        Value::Call(mut call) => {
+                            call.neg = neg;
+                            value = Value::Call(call)
+                        }
+                        _ => unreachable!(),
+                    }
+                }
                 Rule::block => {
                     value =
                         Value::Block(Box::new(self.build_block(&mut eval.into_inner(), context)))
@@ -469,7 +484,6 @@ impl NoirParser {
                             }
                             _ => unreachable!(),
                         };
-                        println!("{:?}", name);
                         name
                     }
                 }
@@ -501,7 +515,6 @@ impl NoirParser {
                 Rule::r#bool => value = self.build_bool(eval, context),
                 Rule::r#char => value = self.build_char(eval, context),
                 Rule::type_casting => {
-                    println!("{}", eval.as_str());
                     value = Value::Casting((
                         Box::new(value),
                         eval.as_str().split_whitespace().collect::<Vec<&str>>()[1]
@@ -664,16 +677,15 @@ impl NoirParser {
     }
 
     fn build_array(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Array {
-        let mut array_type = ArrayType {
-            size: Value::Int(0),
-            data_type: Type::default(),
+        let mut datatype = Type {
+            is_ref: false,
+            ref_count: 0,
+            datatype: DataType::Int(4),
         };
         let mut elements = Vec::new();
         for pair in pairs {
             match pair.as_rule() {
-                Rule::array_type => {
-                    array_type = self.build_array_type(&mut pair.into_inner(), context)
-                }
+                Rule::datatype => datatype = self.build_datatype(&mut pair.into_inner(), context),
                 Rule::value => {
                     let element = self.build_value(&mut pair.into_inner(), context);
                     elements.push(element);
@@ -681,13 +693,7 @@ impl NoirParser {
                 _ => unreachable!(),
             }
         }
-        if array_type.size == Value::Int(0) {
-            array_type.size = Value::Int(elements.len() as i32)
-        }
-        Array {
-            array_type: Box::new(array_type),
-            elements,
-        }
+        Array { datatype, elements }
     }
 
     fn build_array_type(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> ArrayType {
@@ -751,6 +757,7 @@ impl NoirParser {
 
     fn build_call(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Call {
         let mut call = Call {
+            neg: false,
             name: Name {
                 name: String::new(),
                 op: None,

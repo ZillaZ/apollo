@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use super::{ast_context::AstContext, parser::Ast};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -70,6 +72,22 @@ pub enum DataType {
     Any,
 }
 
+impl ToString for DataType {
+    fn to_string(&self) -> String {
+        match self {
+            DataType::Float(b) => format!("float{}", b),
+            DataType::Any => "any".into(),
+            DataType::Bool => "bool".into(),
+            DataType::Char => "char".into(),
+            DataType::Int(b) => format!("i{}", b),
+            DataType::UInt(b) => format!("u{}", b),
+            DataType::String => format!("string"),
+            DataType::Array(_) => format!("array"),
+            _ => panic!("{:?}", self),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Arg {
     pub name: Name,
@@ -127,6 +145,7 @@ pub struct Assignment {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Call {
+    pub neg: bool,
     pub name: Name,
     pub args: Vec<Parameter>,
 }
@@ -207,7 +226,7 @@ pub struct ArrayType {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Array {
-    pub array_type: Box<ArrayType>,
+    pub datatype: Type,
     pub elements: Vec<Value>,
 }
 

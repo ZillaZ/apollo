@@ -12,6 +12,7 @@ mod modules;
 pub struct Program;
 
 fn main() {
+    let args = get_args();
     let parser = NoirParser::new();
     let mut memory = Memory::new("main".into());
     let context = gccjit::Context::default();
@@ -19,11 +20,19 @@ fn main() {
     let input = input.trim();
     let mut pairs: Pairs<Rule> = Program::parse(Rule::program, &input).unwrap();
     let ast = parser.gen_ast(&mut pairs, "main".into());
-    println!("{:?}", ast.expressions);
     let gcc = GccContext::new(&context);
-    gcc.gen_bytecode(&ast, &mut memory, true);
+    let should_debug = if args.len() > 1 && args[1] == "--debug" {
+        true
+    } else {
+        false
+    };
+    gcc.gen_bytecode(&ast, &mut memory, true, should_debug);
 }
 
 fn read_file(path: &str) -> String {
     std::fs::read_to_string(path).unwrap()
+}
+
+fn get_args() -> Vec<String> {
+    std::env::args().collect()
 }

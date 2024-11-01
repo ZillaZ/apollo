@@ -1,44 +1,37 @@
-use static std::threads::threads
+link with "raylib.so"
 
-link with "time.so"
-
-extern fn instant() -> Any {}
-extern fn time_since(instant: Any) -> f4 {}
-
-struct ThreadArgs {
-  name: string
-  count: &i4
+struct Color {
+  r: i4
+  g: i4
+  b: i4
+  a: i4
 }
 
-fn hello(object: Any) {
-  let obj : &ThreadArgs = object
-  let instant = instant()
-  while (true) {
-    if time_since(&instant) > 0.2 {
-      instant = instant()
-      printf("Hello from %s! Count is %d\n", obj.name, obj.*count)
-      obj.*count += 1
-    }
+extern fn InitWindow(width: i4, height: i4, title: string) {}
+extern fn WindowShouldClose() -> bool {}
+extern fn SetTargetFPS(fps: i4) {}
+extern fn BeginDrawing() {}
+extern fn EndDrawing() {}
+extern fn ClearBackground(color: Color) {}
+InitWindow(800, 600, "Hello, Raylib!")
+SetTargetFPS(60)
+
+let count = 0
+while(-WindowShouldClose()) {
+  BeginDrawing()
+  if count == 60 {
+    printf("%d\n", count)
+    count = 0
+  }else{
+    count += 1
   }
-  threads::thread_exit(obj.name)
-  return
+  ClearBackground(new Color {
+  r: 255
+    g: 255
+    b: 0
+    a: 255
+  })
+  EndDrawing()
 }
 
-let id_one : u8 = 1
-let count : i4 = 0
-let name_one = new ThreadArgs {
-  name: "thread one"
-  count: &count
-}
-let result_one : string
-let id_two : u8 = 2
-let name_two = new ThreadArgs {
-  name: "thread two"
-  count: &count
-}
-let result_two : string
-
-threads::thread_spawn(&id_one, hello, name_one)
-threads::thread_spawn(&id_two, hello, name_two)
-threads::thread_join(id_one, &result_one)
-threads::thread_join(id_two, &result_two)
+printf("sexokkk\n")
