@@ -505,9 +505,11 @@ impl NoirParser {
                     ))
                 }
                 Rule::field_access => {
-                    value = Value::FieldAccess(Box::new(
-                        self.build_field_access(&mut eval.into_inner(), context),
-                    ))
+                    let mut aux = self.build_field_access(&mut eval.into_inner(), context);
+                    aux.op = ref_op.clone();
+                    aux.op_count = op_count;
+                    println!("PARSER FIELD ACCESS IS {:?}", aux);
+                    value = Value::FieldAccess(Box::new(aux));
                 }
                 Rule::string_value => value = self.build_string_value(eval, context),
                 Rule::integer => value = self.build_integer(eval, context),
@@ -712,10 +714,7 @@ impl NoirParser {
     fn build_if(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> If {
         let mut value = If {
             not: false,
-            condition: Box::new(Operation::Atom(Atom {
-                is_neg: false,
-                value: Value::Int(0),
-            })),
+            condition: Box::new(Value::Int(0)),
             block: Box::new(Block {
                 expr: Vec::new(),
                 box_return: None,
@@ -725,9 +724,8 @@ impl NoirParser {
         for pair in pairs {
             match pair.as_rule() {
                 Rule::not => value.not = true,
-                Rule::operation => {
-                    value.condition =
-                        Box::new(self.build_operation(&mut pair.into_inner(), context))
+                Rule::value => {
+                    value.condition = Box::new(self.build_value(&mut pair.into_inner(), context))
                 }
                 Rule::block => {
                     value.block = Box::new(self.build_block(&mut pair.into_inner(), context))

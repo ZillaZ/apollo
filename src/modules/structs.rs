@@ -1,4 +1,3 @@
-
 use super::{ast_context::AstContext, parser::Ast};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -323,7 +322,7 @@ pub enum Otherwise {
 #[derive(Clone, Debug, PartialEq)]
 pub struct If {
     pub not: bool,
-    pub condition: Box<Operation>,
+    pub condition: Box<Value>,
     pub block: Box<Block>,
     pub otherwise: Option<Box<Otherwise>>,
 }

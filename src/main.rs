@@ -21,12 +21,15 @@ fn main() {
     let mut pairs: Pairs<Rule> = Program::parse(Rule::program, &input).unwrap();
     let ast = parser.gen_ast(&mut pairs, "main".into());
     let gcc = GccContext::new(&context);
-    let should_debug = if args.len() > 1 && args[1] == "--debug" {
+    let should_debug = if args.len() > 1 && args[2] == "--debug" {
         true
     } else {
         false
     };
     gcc.gen_bytecode(&ast, &mut memory, true, should_debug);
+    if args[1] == "run" {
+        std::process::Command::new("./apollo").output().unwrap();
+    }
 }
 
 fn read_file(path: &str) -> String {

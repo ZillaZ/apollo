@@ -456,6 +456,8 @@ impl<'a> GccContext<'a> {
             .compile_to_file(gccjit::OutputKind::Executable, "apollo");
         self.context
             .compile_to_file(gccjit::OutputKind::DynamicLibrary, "apollo.so");
+        self.context
+            .compile_to_file(gccjit::OutputKind::Assembler, "apollo.asm");
     }
 
     pub fn gen_bytecode(
@@ -794,6 +796,7 @@ impl<'a> GccContext<'a> {
                 self.parse_constructor(constructor, block, memory, ast)
             }
             Value::FieldAccess(ref access) => {
+                println!("ACCESS IS {:?}", access);
                 self.parse_field_access(access, None, block, memory, ast)
             }
             Value::Casting((ref value, ref target)) => {
@@ -804,7 +807,6 @@ impl<'a> GccContext<'a> {
             Value::Range(ref range) => self.parse_range(range, block, memory, ast),
             _ => todo!(),
         };
-
         rtn
     }
 
@@ -845,7 +847,16 @@ impl<'a> GccContext<'a> {
         memory: &mut Memory<'a>,
         ast: &Ast,
     ) -> GccValues<'a> {
-        let value = self.parse_field_access_name(&access.name, aux, block, memory, ast);
+        let mut value = self.parse_field_access_name(&access.name, aux, block, memory, ast);
+        for _ in 0..access.op_count {
+            match access.op {
+                Some(RefOp::Reference) => {
+                    value = GccValues::R(value.dereference().get_address(None))
+                }
+                Some(RefOp::Dereference) => value = GccValues::L(value.rvalue().dereference(None)),
+                _ => (),
+            }
+        }
         if let Some(ref next) = access.next {
             return self.parse_field_access(&next, Some(value), block, memory, ast);
         }
@@ -867,25 +878,20 @@ impl<'a> GccContext<'a> {
                         let struct_fields = memory.structs.get(&field).unwrap();
                         let field_index = struct_fields.get(&name.name).unwrap();
                         let field = field.get_field(*field_index);
-                        GccValues::R(val.dereference().access_field(None, field).to_rvalue())
-                    } else if let Some(field) = val
-                        .rvalue()
-                        .dereference(None)
-                        .to_rvalue()
-                        .get_type()
-                        .is_struct()
+                        GccValues::L(val.dereference().access_field(None, field))
+                    } else if let Some(field) = val.dereference().to_rvalue().get_type().is_struct()
                     {
                         let struct_fields = memory.structs.get(&field).unwrap();
                         let field_index = struct_fields.get(&name.name).unwrap();
                         let field = field.get_field(*field_index);
-                        GccValues::R(
-                            val.rvalue()
-                                .dereference(None)
-                                .access_field(None, field)
-                                .to_rvalue(),
-                        )
+                        GccValues::L(val.dereference().access_field(None, field))
                     } else {
-                        panic!("xiiikk")
+                        panic!(
+                            "Tried to access {}, but {:?} is not a struct. It is {:?}",
+                            name.name,
+                            val,
+                            val.dereference().to_rvalue().get_type()
+                        )
                     };
                     for _ in 0..name.op_count {
                         value = match name.op {
@@ -903,6 +909,7 @@ impl<'a> GccContext<'a> {
                         .unwrap()
                         .get(&name.name)
                         .unwrap();
+                    println!("{:?}", name);
                     match name.op {
                         Some(RefOp::Reference) => GccValues::R(var.get_address(None)),
                         Some(RefOp::Dereference) => GccValues::R(var.to_rvalue()),
@@ -1184,7 +1191,7 @@ impl<'a> GccContext<'a> {
         ast: &Ast,
     ) -> Block<'_> {
         let mut condition = self
-            .parse_operation(&ast_if.condition, block, memory, ast)
+            .parse_value(&ast_if.condition, block, memory, ast)
             .rvalue();
         if ast_if.not {
             condition = self.context.new_unary_op(
@@ -1298,6 +1305,7 @@ impl<'a> GccContext<'a> {
         use structs::Parameter;
         let mut params = Vec::new();
         for arg in args {
+            println!("Arg is {:?}", arg);
             let value = match arg {
                 Parameter::Name(name) => self.parse_name(name, memory, block),
                 Parameter::Value(value) => self.parse_value(value, block, memory, ast),
@@ -1567,7 +1575,7 @@ impl<'a> GccContext<'a> {
             let datatype = memory
                 .datatypes
                 .get(&name.name)
-                .expect("Refered datatype does not exist");
+                .expect(&format!("Datatype {} does not exist", name.name));
             return GccValues::Type(*datatype);
         }
         let value = if let Some(var) = variables.get(&name.name) {
