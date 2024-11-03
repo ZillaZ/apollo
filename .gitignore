@@ -6,3 +6,8 @@
 *.txt
 apollo
 test
+vgcore*
+aux
+*.o
+*.asm
+*.s

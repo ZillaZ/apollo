@@ -59,13 +59,11 @@ fn split(data: &String, pattern: char, rtn: &String) {
 		if acc != (0 as u8) {
 			acc += 1 as u8
 		}
-		printf("size is %d\n", end)
-		let nb : &u8 = malloc((size_of(end)) + (end)) as &u8
+		let nb : &u1 = malloc((size_of(end)) * (end)) as &u8
 		let i = acc
 		while(i < (acc + end)) {
-			let aux : char = *data.chars[i]
-			nb[i] = aux as u8
-			printf("%d %c\n", i, nb[4])
+			let aux : char = aux.chars[i]
+			nb[i-acc] = aux as u1
 			i += 1 as u8
 		}
 		rtn[count] = new String {
@@ -73,8 +71,6 @@ fn split(data: &String, pattern: char, rtn: &String) {
 			chars: nb
 			index: 0
 		}
-		printf("NAME IS %s\n", nb as &char)
-		memcpy(&rtn[count].chars, nb, end)
 		count += 1
 		acc += end
 	}

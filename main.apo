@@ -1,5 +1,32 @@
+use static std::threads::threads
+use static std::sockets::sockets
 use static std::strings::strings
 
 let test = strings::new_string_from("Lucas Henrique Santana Marcelino")
 let split : strings::String
 strings::split(&test, ' ', &split)
+let ref = &split
+let count = 0
+
+while(count < 4) {
+	printf("%s\n", ref[count].chars)
+	count += 1
+}
+
+fn read(stream: Any) {
+	let stream = stream as &sockets::TcpStream
+	let data = sockets::read_tcp(stream)
+	printf("%s", *data.data as string)
+	threads::thread_exit(stream)
+	return
+}
+
+let address = "127.0.0.1:8080"
+let listener = sockets::new_tcp_listener(address)
+let id : u8 = 0
+while (true) {
+	let stream = sockets::receive_incoming(listener)
+	printf("received connection\n")
+	id += 1 as u8
+	threads::thread_spawn(&id, &read, stream)
+}
