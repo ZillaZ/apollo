@@ -517,11 +517,10 @@ impl NoirParser {
                 Rule::r#bool => value = self.build_bool(eval, context),
                 Rule::r#char => value = self.build_char(eval, context),
                 Rule::type_casting => {
+                    let eval = eval.into_inner().peek().unwrap();
                     value = Value::Casting((
                         Box::new(value),
-                        eval.as_str().split_whitespace().collect::<Vec<&str>>()[1]
-                            .trim()
-                            .to_string(),
+                        self.build_datatype(&mut eval.into_inner(), context),
                     ))
                 }
                 Rule::value => value = self.build_value(&mut eval.into_inner(), context),

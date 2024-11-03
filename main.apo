@@ -1,37 +1,5 @@
-link with "raylib.so"
+use static std::strings::strings
 
-struct Color {
-  r: i4
-  g: i4
-  b: i4
-  a: i4
-}
-
-extern fn InitWindow(width: i4, height: i4, title: string) {}
-extern fn WindowShouldClose() -> bool {}
-extern fn SetTargetFPS(fps: i4) {}
-extern fn BeginDrawing() {}
-extern fn EndDrawing() {}
-extern fn ClearBackground(color: Color) {}
-InitWindow(800, 600, "Hello, Raylib!")
-SetTargetFPS(60)
-
-let count = 0
-while(-WindowShouldClose()) {
-  BeginDrawing()
-  if count == 60 {
-    printf("%d\n", count)
-    count = 0
-  }else{
-    count += 1
-  }
-  ClearBackground(new Color {
-  r: 255
-    g: 255
-    b: 0
-    a: 255
-  })
-  EndDrawing()
-}
-
-printf("sexokkk\n")
+let test = strings::new_string_from("Lucas Henrique Santana Marcelino")
+let split : strings::String
+strings::split(&test, ' ', &split)

@@ -1,0 +1,82 @@
+extern fn malloc(size: u8) -> Any {}
+extern fn memcpy(dest: Any, source: Any, size: u8) -> Any {}
+
+struct String {
+	len: u8
+	chars: string
+	index: u8
+}
+
+impl Iterable for String #{
+	fn peek(self: &String) -> char {
+		return *self.chars[*self.index]
+	}
+	fn next(self: &String) -> char {
+		if (*self.index) == (*self.len) {
+			return *self.chars[*self.index]
+		}
+		let rtn : char = *self.chars[*self.index]
+		*self.index += 1 as u8
+		return rtn
+	}
+	fn ended(self: &String) -> bool {
+		let value = (*self.index) == (*self.len)
+		if value {
+			*self.index = 0
+		}
+		return value
+	}
+}
+
+fn new_string_from(text: string) -> String {
+	let count = 0
+	while((text[count] as u1) != (0 as u1)) {
+		count += 1
+	}
+	return new String {
+		len: count
+		chars: text
+	}
+}
+
+fn find(data: &String, pattern: char) -> u8 {
+	let count = 0
+	for i in *data {
+		if i == pattern {
+			return count
+		}
+		count += 1
+	}
+	return count
+}
+
+fn split(data: &String, pattern: char, rtn: &String) {
+	let acc : u8 = 0
+	let count = 0
+	let aux : String = *data
+	while (acc < *data.len) {
+		let end = aux.find(pattern)
+		if acc != (0 as u8) {
+			acc += 1 as u8
+		}
+		printf("size is %d\n", end)
+		let nb : &u8 = malloc((size_of(end)) + (end)) as &u8
+		let i = acc
+		while(i < (acc + end)) {
+			let aux : char = *data.chars[i]
+			nb[i] = aux as u8
+			printf("%d %c\n", i, nb[4])
+			i += 1 as u8
+		}
+		rtn[count] = new String {
+			len: (acc + end) - acc
+			chars: nb
+			index: 0
+		}
+		printf("NAME IS %s\n", nb as &char)
+		memcpy(&rtn[count].chars, nb, end)
+		count += 1
+		acc += end
+	}
+	return
+}

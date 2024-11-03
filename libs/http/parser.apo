@@ -1,0 +1,4 @@
+struct HttpRequest {
+	headers: &Header
+	body: string
+}

@@ -158,6 +158,8 @@ impl<'a> GccContext<'a> {
         let uint_4 = <u32 as Typeable>::get_type(self.context);
         let uint_8 = <u64 as Typeable>::get_type(self.context);
         let uint_16 = self.context.new_c_type(gccjit::CType::UInt128t);
+        let bool_type = <bool as Typeable>::get_type(self.context);
+        memory.datatypes.insert("bool".into(), bool_type);
         memory.datatypes.insert("i1".into(), int_1);
         memory.datatypes.insert("i2".into(), int_2);
         memory.datatypes.insert("i4".into(), int_4);
@@ -177,7 +179,8 @@ impl<'a> GccContext<'a> {
 
     fn gen_text_types(&'a self, memory: &mut Memory<'a>) {
         let char_type = <char as Typeable>::get_type(self.context);
-        let string_type = self.context.new_string_literal("").get_type();
+        let string_val = self.context.new_string_literal("");
+        let string_type = string_val.get_type();
         memory.datatypes.insert("char".into(), char_type);
         memory.datatypes.insert("string".into(), string_type);
         memory.pointer_types.insert(string_type.make_const());
@@ -186,6 +189,7 @@ impl<'a> GccContext<'a> {
 
     fn gen_void_type(&'a self, memory: &mut Memory<'a>) {
         let void_ptr_type = <() as Typeable>::get_type(self.context).make_pointer();
+        memory.pointer_types.insert(void_ptr_type);
         memory.datatypes.insert("Any".into(), void_ptr_type);
     }
 
@@ -414,14 +418,14 @@ impl<'a> GccContext<'a> {
     }
 
     fn add_link(&'a self, lib_link: &LibLink) {
-        let (_, path) = std::env::vars().find(|(x, _)| x == "APOLLO_LIBS").unwrap();
+        let (_, path) = std::env::vars().find(|(x, _)| x == "APOLLO_ROOT").unwrap();
         if lib_link.lib_name.ends_with(".o") || lib_link.lib_name.ends_with(".a") {
             self.context
                 .add_driver_option(format!("-L{} -l:{}", path, lib_link.lib_name));
         } else {
             self.context.add_driver_option(format!(
                 "-l{}",
-                lib_link.lib_name.split(".").peekable().peek().unwrap()
+                lib_link.lib_name.split(".").peekable().peek().unwrap(),
             ))
         }
     }
@@ -445,6 +449,7 @@ impl<'a> GccContext<'a> {
     }
 
     fn compile_program(&'a self, is_debug: bool) {
+        self.context.add_driver_option("-march=x86-64-v4");
         if is_debug {
             self.context.dump_to_file("apollo.c", false);
         } else {
@@ -457,7 +462,7 @@ impl<'a> GccContext<'a> {
         self.context
             .compile_to_file(gccjit::OutputKind::DynamicLibrary, "apollo.so");
         self.context
-            .compile_to_file(gccjit::OutputKind::Assembler, "apollo.asm");
+            .compile_to_file(gccjit::OutputKind::Assembler, "apollo.s");
     }
 
     pub fn gen_bytecode(
@@ -590,6 +595,14 @@ impl<'a> GccContext<'a> {
             new_memory.field_types.iter().for_each(|(field, datatype)| {
                 memory.field_types.insert(*field, *datatype);
             });
+            new_memory
+                .function_addresses
+                .iter()
+                .for_each(|(name, address)| {
+                    memory
+                        .function_addresses
+                        .insert(format!("{}::{}", base_name, name), *address);
+                });
         } else {
             import.imported.iter().for_each(|name| {
                 let pair = name.split("/").collect::<Vec<_>>();
@@ -665,7 +678,6 @@ impl<'a> GccContext<'a> {
                     .parse_array_access(access, block, memory, ast)
                     .dereference();
                 let value = self.parse_value(&assignment.value, block, memory, ast);
-
                 let value = self.new_cast(var.to_rvalue().get_type(), &value, memory);
                 block.add_assignment(None, var, value.to_rvalue());
             }
@@ -791,7 +803,7 @@ impl<'a> GccContext<'a> {
                 let lvalue = self.parse_array_access(access, block, memory, ast);
                 lvalue
             }
-            Value::Char(ref r#char) => self.parse_char(char),
+            Value::Char(ref r#char) => self.parse_char(char, memory),
             Value::Constructor(ref constructor) => {
                 self.parse_constructor(constructor, block, memory, ast)
             }
@@ -801,8 +813,8 @@ impl<'a> GccContext<'a> {
             }
             Value::Casting((ref value, ref target)) => {
                 let value = self.parse_value(&value, block, memory, ast);
-                let target = memory.datatypes.get(target.trim()).unwrap();
-                GccValues::R(self.new_cast(*target, &value, memory))
+                let target = self.parse_datatype(target, memory);
+                GccValues::R(self.new_cast(target, &value, memory))
             }
             Value::Range(ref range) => self.parse_range(range, block, memory, ast),
             _ => todo!(),
@@ -876,13 +888,18 @@ impl<'a> GccContext<'a> {
                 Some(val) => {
                     let mut value = if let Some(field) = val.rvalue().get_type().is_struct() {
                         let struct_fields = memory.structs.get(&field).unwrap();
-                        let field_index = struct_fields.get(&name.name).unwrap();
+                        let field_index = struct_fields.get(&name.name).expect(&format!(
+                            "Field {} does not exist on struct {:?}",
+                            name.name, field
+                        ));
                         let field = field.get_field(*field_index);
                         GccValues::L(val.dereference().access_field(None, field))
                     } else if let Some(field) = val.dereference().to_rvalue().get_type().is_struct()
                     {
                         let struct_fields = memory.structs.get(&field).unwrap();
-                        let field_index = struct_fields.get(&name.name).unwrap();
+                        let field_index = struct_fields
+                            .get(&name.name)
+                            .expect(&format!("Struct field {} is undefined", name.name));
                         let field = field.get_field(*field_index);
                         GccValues::L(val.dereference().access_field(None, field))
                     } else {
@@ -1007,9 +1024,9 @@ impl<'a> GccContext<'a> {
         field
     }
 
-    fn parse_char(&'a self, c: &char) -> GccValues<'a> {
+    fn parse_char(&'a self, c: &char, memory: &mut Memory<'a>) -> GccValues<'a> {
         GccValues::R(self.context.new_rvalue_from_int(
-            <char as Typeable>::get_type(&self.context),
+            *memory.datatypes.get("char").unwrap(),
             *c.to_string().bytes().peekable().peek().unwrap() as i32,
         ))
     }
@@ -1162,7 +1179,7 @@ impl<'a> GccContext<'a> {
                 *if let Some(val) = memory.datatypes.get(name) {
                     val
                 } else {
-                    panic!("{:?}", datatype)
+                    panic!("{:?} is undefined", datatype)
                 }
             }
             DataType::Float(bytecount) => {
@@ -1177,6 +1194,7 @@ impl<'a> GccContext<'a> {
             for _ in 0..datatype.ref_count - 1 {
                 dt = r#type.make_pointer();
             }
+            memory.pointer_types.insert(dt);
             dt
         } else {
             r#type
@@ -1287,9 +1305,10 @@ impl<'a> GccContext<'a> {
             let variables = memory.variables.get_mut(&memory.function_scope).unwrap();
             variables.insert(declaration.name.name.clone(), lvalue);
         } else {
-            let dt = memory.unconst_type(value.as_ref().unwrap().rvalue().get_type());
+            let dt = value.as_ref().unwrap().rvalue().get_type();
             let lvalue = function.new_local(None, dt, &declaration.name.name);
-            block.add_assignment(None, lvalue, value.as_ref().unwrap().rvalue());
+            let value = value.as_ref().unwrap().rvalue();
+            block.add_assignment(None, lvalue, value);
             let variables = memory.variables.get_mut(&memory.function_scope).unwrap();
             variables.insert(declaration.name.name.clone(), lvalue);
         }
@@ -1351,6 +1370,13 @@ impl<'a> GccContext<'a> {
                 .new_rvalue_from_int(*memory.datatypes.get("i4").unwrap(), value as i32);
             return GccValues::R(rvalue);
         }
+        if call.name.name == "size_of" {
+            let size = args[0].rvalue().get_type().get_size();
+            let size = self
+                .context
+                .new_rvalue_from_int(*memory.datatypes.get("u8").unwrap(), size as i32);
+            return GccValues::R(size);
+        }
         if !memory.functions.contains_key(&call.name.name) {
             self.parse_function(
                 ast.context
@@ -1361,16 +1387,17 @@ impl<'a> GccContext<'a> {
                 ast,
             );
         }
+        println!("PRELOOP");
         let function = memory.functions.get(&call.name.name).unwrap().clone();
         if let Some(field) = field {
             let dt = function.get_param(0).to_rvalue().get_type();
             let mut vec = Vec::new();
             if dt.is_compatible_with(*memory.datatypes.get("Any").unwrap()) {
                 vec.push(field);
-            } else if dt.is_compatible_with(field.rvalue().get_type().make_pointer()) {
-                vec.push(GccValues::R(field.get_reference()));
-            } else {
+            } else if dt.is_compatible_with(field.rvalue().get_type()) {
                 vec.push(GccValues::R(field.rvalue()));
+            } else {
+                vec.push(GccValues::R(field.get_reference()));
             }
             vec.append(&mut args);
             args = vec;
@@ -1383,6 +1410,7 @@ impl<'a> GccContext<'a> {
             let declared_type = function.get_param(i as i32).to_rvalue().get_type();
             let parameter = params.get_mut(i).unwrap();
             *parameter = self.new_cast(declared_type, &args[i], memory);
+            println!("CALL ARGUMENT IS {:?}", parameter);
         }
         let value = self.context.new_call(None, function, &params);
         if call.neg {
@@ -1583,7 +1611,10 @@ impl<'a> GccContext<'a> {
         } else if let Some(address) = memory.function_addresses.get(&name.name) {
             GccValues::R(*address)
         } else {
-            panic!("Variable {} not found", name.name)
+            panic!(
+                "Variable {} not found. Working on {:?} inside {:?}",
+                name.name, name, block
+            )
         };
         value
     }

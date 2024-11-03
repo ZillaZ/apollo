@@ -196,7 +196,7 @@ pub struct Constructor {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
-    Casting((Box<Value>, String)),
+    Casting((Box<Value>, Type)),
     Operation(Box<Operation>),
     Call(Call),
     String(String),

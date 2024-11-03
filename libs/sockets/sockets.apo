@@ -1,0 +1,12 @@
+link with "sockets.so"
+
+struct TcpListener {}
+struct TcpStream {}
+struct StreamData {
+	size: u8
+	data: &u1
+}
+
+extern fn new_tcp_listener(address: &string) -> &TcpListener {}
+extern fn receive_incoming(listener: &TcpListener) -> &TcpStream {}
+extern fn read_tcp(stream: &TcpStream) -> &StreamData {}

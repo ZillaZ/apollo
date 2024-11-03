@@ -87,7 +87,7 @@ impl<'a> Memory<'a> {
     }
     pub fn unconst_type(&self, r#type: Type<'a>) -> Type<'a> {
         if let Some(unconst) = self.primitive_types.get(&r#type) {
-            unconst.clone()
+            *unconst
         } else {
             r#type
         }
