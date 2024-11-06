@@ -28,14 +28,14 @@ pub enum Operations {
 #[derive(Clone, Debug, PartialEq)]
 pub struct UnaryOp {
     pub prefix: Operations,
-    pub value: Box<Operation>,
+    pub value: Box<Value>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct BinaryOp {
-    pub lhs: Box<Operation>,
+    pub lhs: Box<Value>,
     pub op: Operations,
-    pub rhs: Box<Operation>,
+    pub rhs: Box<Value>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -81,6 +81,7 @@ impl ToString for DataType {
             DataType::UInt(b) => format!("u{}", b),
             DataType::String => format!("string"),
             DataType::Array(_) => format!("array"),
+            DataType::StructType(st) => format!("struct {st}"),
             _ => panic!("{:?}", self),
         }
     }
@@ -94,7 +95,6 @@ pub struct Arg {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Operation {
-    Atom(Atom),
     BinaryOp(BinaryOp),
     UnaryOp(UnaryOp),
 }
@@ -195,7 +195,7 @@ pub struct Constructor {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum Value {
+pub enum ValueEnum {
     Casting((Box<Value>, Type)),
     Operation(Box<Operation>),
     Call(Call),
@@ -205,7 +205,6 @@ pub enum Value {
     Float(f32),
     Block(Box<Block>),
     Name(Name),
-    Atom(Box<Atom>),
     Bool(bool),
     If(If),
     Char(char),
@@ -214,6 +213,28 @@ pub enum Value {
     Constructor(Box<Constructor>),
     FieldAccess(Box<FieldAccess>),
     Range(RangeValue),
+    None,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Value {
+    pub heap_allocated: bool,
+    pub value: ValueEnum,
+    pub ref_op: Option<RefOp>,
+    pub op_count: i32,
+    pub neg: bool,
+}
+
+impl Default for Value {
+    fn default() -> Self {
+        Self {
+            heap_allocated: false,
+            value: ValueEnum::Int(0),
+            ref_op: None,
+            op_count: 0,
+            neg: false,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -298,12 +319,6 @@ pub struct Declaration {
     pub name: Name,
     pub datatype: Option<Type>,
     pub value: Option<Value>,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct Atom {
-    pub is_neg: bool,
-    pub value: Value,
 }
 
 #[derive(Clone, Debug, PartialEq)]

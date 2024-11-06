@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use modules::parser::NoirParser;
 use pest::{iterators::Pairs, Parser};
 use pest_derive::Parser;
@@ -26,7 +28,8 @@ fn main() {
     } else {
         false
     };
-    gcc.gen_bytecode(&ast, &mut memory, true, should_debug);
+    let mut imports = HashSet::new();
+    gcc.gen_bytecode(&ast, &mut imports, &mut memory, true, should_debug);
     if args[1] == "run" {
         std::process::Command::new("./apollo").output().unwrap();
     }

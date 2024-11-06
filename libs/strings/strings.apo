@@ -9,20 +9,20 @@ struct String {
 
 impl Iterable for String #{
 	fn peek(self: &String) -> char {
-		return *self.chars[*self.index]
+		return ^self.chars[^self.index]
 	}
 	fn next(self: &String) -> char {
-		if (*self.index) == (*self.len) {
-			return *self.chars[*self.index]
+		if (^self.index) == (^self.len) {
+			return ^self.chars[^self.index]
 		}
-		let rtn : char = *self.chars[*self.index]
-		*self.index += 1 as u8
+		let rtn : char = ^self.chars[^self.index]
+		^self.index += 1 as u8
 		return rtn
 	}
 	fn ended(self: &String) -> bool {
-		let value = (*self.index) == (*self.len)
+		let value = (^self.index) == (^self.len)
 		if value {
-			*self.index = 0
+			^self.index = 0
 		}
 		return value
 	}
@@ -41,7 +41,7 @@ fn new_string_from(text: string) -> String {
 
 fn find(data: &String, pattern: char) -> u8 {
 	let count = 0
-	for i in *data {
+	for i in ^data {
 		if i == pattern {
 			return count
 		}
@@ -50,29 +50,49 @@ fn find(data: &String, pattern: char) -> u8 {
 	return count
 }
 
-fn split(data: &String, pattern: char, rtn: &String) {
+fn count(data: &String, pattern: char) -> u8 {
+	let count = 0 as u8
+	for i in ^data {
+		if i == pattern {
+			count += 1 as u8
+		}
+	}
+	return count
+}
+
+struct SplitResult {
+	data: &String
+	count: i4
+}
+
+fn split(data: &String, pattern: char) -> SplitResult {
 	let acc : u8 = 0
 	let count = 0
-	let aux : String = *data
-	while (acc < *data.len) {
+	let aux : String = ^data
+	let size = (size_of(^data) as u8) * ((count(data, pattern)) + (1 as u8))
+	let rtn = malloc(size) as &String
+	while (acc < ^data.len) {
 		let end = aux.find(pattern)
 		if acc != (0 as u8) {
 			acc += 1 as u8
 		}
-		let nb : &u1 = malloc((size_of(end)) * (end)) as &u8
+		let nb : &u1 = malloc((size_of(end) as u8) * (end)) as &u1
 		let i = acc
 		while(i < (acc + end)) {
 			let aux : char = aux.chars[i]
-			nb[i-acc] = aux as u1
+			nb[i-acc] = aux
 			i += 1 as u8
 		}
 		rtn[count] = new String {
-			len: (acc + end) - acc
+			len: end
 			chars: nb
 			index: 0
 		}
 		count += 1
 		acc += end
 	}
-	return
+	return new SplitResult {
+		data: rtn
+		count: count
+	}
 }

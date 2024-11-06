@@ -26,6 +26,7 @@ pub struct Memory<'a> {
     pub impls: HashMap<Type<'a>, Vec<(String, Function<'a>)>>,
     pub function_addresses: HashMap<String, RValue<'a>>,
     pub pointer_types: HashSet<Type<'a>>,
+    pub imports: HashSet<String>,
     pub memory_tree: Vec<Box<Memory<'a>>>,
     pub extensions: HashMap<String, Box<dyn Fn(Vec<GccValues>) -> GccValues>>,
 }
@@ -56,6 +57,7 @@ impl<'a> Memory<'a> {
         let impls = HashMap::new();
         let function_addresses = HashMap::new();
         let pointer_types = HashSet::new();
+        let imports = HashSet::new();
         let memory_tree = Vec::new();
         let extensions = HashMap::new();
         Self {
@@ -81,6 +83,7 @@ impl<'a> Memory<'a> {
             blocks,
             field_types,
             pointer_types,
+            imports,
             memory_tree,
             extensions,
         }

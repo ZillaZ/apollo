@@ -170,7 +170,7 @@ impl NoirParser {
 
     fn build_for_loop(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> ForLoop {
         let mut pivot = String::new();
-        let mut range = Value::Int(0);
+        let mut range = Value::default();
         let mut block = Block::default();
         for pair in pairs {
             match pair.as_rule() {
@@ -188,7 +188,7 @@ impl NoirParser {
     }
 
     fn build_while_loop(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> WhileLoop {
-        let mut condition = Value::Int(0);
+        let mut condition = Value::default();
         let mut block = Block::default();
         for pair in pairs {
             match pair.as_rule() {
@@ -329,7 +329,7 @@ impl NoirParser {
             op_count: 0,
         });
         let mut op = OverloadedOp::Add;
-        let mut rhs = Value::Int(0);
+        let mut rhs = Value::default();
         for pair in pairs {
             match pair.as_rule() {
                 Rule::name => {
@@ -371,7 +371,7 @@ impl NoirParser {
             op: None,
             op_count: 0,
         });
-        let mut value = Value::Int(0);
+        let mut value = Value::default();
         for pair in pairs {
             match pair.as_rule() {
                 Rule::array_access => {
@@ -394,47 +394,50 @@ impl NoirParser {
     }
 
     fn build_operation(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Operation {
-        self.pratt_parser
-            .map_primary(|primary| match primary.as_rule() {
-                Rule::atom => Operation::Atom(self.build_atom(&mut primary.into_inner(), context)),
-                Rule::operation => self.build_operation(&mut primary.into_inner(), context),
-                rule => unreachable!("Rule {:?}", rule),
+        let mut lhs = Value::default();
+        let mut rhs = Value::default();
+        let mut op = Operations::Add;
+        let mut changed = false;
+        for pair in pairs {
+            match pair.as_rule() {
+                Rule::unary_minus => op = Operations::Sub,
+                Rule::add => op = Operations::Add,
+                Rule::sub => op = Operations::Sub,
+                Rule::mul => op = Operations::Mul,
+                Rule::div => op = Operations::Div,
+                Rule::and => op = Operations::And,
+                Rule::or => op = Operations::Or,
+                Rule::lt => op = Operations::Lt,
+                Rule::gt => op = Operations::Gt,
+                Rule::lte => op = Operations::Lte,
+                Rule::gte => op = Operations::Gte,
+                Rule::cmp_eq => op = Operations::Eq,
+                Rule::neq => op = Operations::Neq,
+                Rule::modulo => op = Operations::Modulo,
+                Rule::op_value => {
+                    if changed {
+                        rhs = self.build_value(&mut pair.into_inner(), context);
+                        changed = false
+                    } else {
+                        lhs = self.build_value(&mut pair.into_inner(), context);
+                        changed = true
+                    }
+                }
+                _ => unreachable!("Infix wtf"),
+            }
+        }
+        if !changed {
+            Operation::BinaryOp(BinaryOp {
+                lhs: Box::new(lhs),
+                op,
+                rhs: Box::new(rhs),
             })
-            .map_infix(|lhs, infix, rhs| {
-                let op = match infix.as_rule() {
-                    Rule::add => Operations::Add,
-                    Rule::sub => Operations::Sub,
-                    Rule::mul => Operations::Mul,
-                    Rule::div => Operations::Div,
-                    Rule::and => Operations::And,
-                    Rule::or => Operations::Or,
-                    Rule::lt => Operations::Lt,
-                    Rule::gt => Operations::Gt,
-                    Rule::lte => Operations::Lte,
-                    Rule::gte => Operations::Gte,
-                    Rule::cmp_eq => Operations::Eq,
-                    Rule::neq => Operations::Neq,
-                    Rule::modulo => Operations::Modulo,
-                    _ => unreachable!("Infix wtf"),
-                };
-                Operation::BinaryOp(BinaryOp {
-                    lhs: Box::new(lhs),
-                    op,
-                    rhs: Box::new(rhs),
-                })
+        } else {
+            Operation::UnaryOp(UnaryOp {
+                value: Box::new(lhs),
+                prefix: op,
             })
-            .map_prefix(|prefix, value| {
-                let prefix = match prefix.as_rule() {
-                    Rule::unary_minus => Operations::Neg,
-                    Rule::not => Operations::Not,
-                    rule => unreachable!("Prefix {:?}", rule),
-                };
-                Operation::UnaryOp(UnaryOp {
-                    prefix,
-                    value: Box::new(value),
-                })
-            })
-            .parse(pairs)
+        }
     }
 
     pub fn build_return(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Return {
@@ -447,104 +450,92 @@ impl NoirParser {
     }
 
     fn build_value(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Value {
-        let mut value = Value::Int(0);
-        let mut op_count = 0;
-        let mut ref_op = None;
-        let mut neg = false;
+        let mut value = Value::default();
         for eval in pairs {
             match eval.as_rule() {
-                Rule::unary_minus => neg = true,
                 Rule::operation => {
-                    value = Value::Operation(Box::new(
+                    value.value = ValueEnum::Operation(Box::new(
                         self.build_operation(&mut eval.into_inner(), context),
                     ))
                 }
+                Rule::op_value => value = self.build_value(&mut eval.into_inner(), context),
+                Rule::non_op_value => value = self.build_value(&mut eval.into_inner(), context),
+                Rule::unary_minus => value.neg = true,
                 Rule::call => {
-                    let aux = Value::Call(self.build_call(&mut eval.into_inner(), context));
-                    match aux {
-                        Value::Call(mut call) => {
-                            call.neg = neg;
-                            value = Value::Call(call)
-                        }
-                        _ => unreachable!(),
-                    }
+                    value.value = ValueEnum::Call(self.build_call(&mut eval.into_inner(), context));
                 }
                 Rule::block => {
-                    value =
-                        Value::Block(Box::new(self.build_block(&mut eval.into_inner(), context)))
+                    value.value = ValueEnum::Block(Box::new(
+                        self.build_block(&mut eval.into_inner(), context),
+                    ))
                 }
                 Rule::name => {
-                    value = {
-                        let name = Value::Name(self.build_name(&mut eval.into_inner(), context));
-                        let name = match name {
-                            Value::Name(mut name) => {
-                                name.op = ref_op.clone();
-                                name.op_count += op_count;
-                                Value::Name(name)
-                            }
-                            _ => unreachable!(),
-                        };
-                        name
-                    }
+                    value.value = ValueEnum::Name(self.build_name(&mut eval.into_inner(), context))
                 }
-                Rule::atom => {
-                    value = Value::Atom(Box::new(self.build_atom(&mut eval.into_inner(), context)))
+                Rule::r#if => {
+                    value.value = ValueEnum::If(self.build_if(&mut eval.into_inner(), context))
                 }
-                Rule::r#if => value = Value::If(self.build_if(&mut eval.into_inner(), context)),
                 Rule::array => {
-                    value = Value::Array(self.build_array(&mut eval.into_inner(), context))
+                    value.value =
+                        ValueEnum::Array(self.build_array(&mut eval.into_inner(), context))
                 }
                 Rule::array_access => {
-                    value = Value::ArrayAccess(Box::new(
+                    value.value = ValueEnum::ArrayAccess(Box::new(
                         self.build_array_access(&mut eval.into_inner(), context),
                     ))
                 }
                 Rule::constructor => {
-                    value = Value::Constructor(Box::new(
+                    value.value = ValueEnum::Constructor(Box::new(
                         self.build_constructor(&mut eval.into_inner(), context),
                     ))
                 }
                 Rule::field_access => {
-                    let mut aux = self.build_field_access(&mut eval.into_inner(), context);
-                    aux.op = ref_op.clone();
-                    aux.op_count = op_count;
-                    println!("PARSER FIELD ACCESS IS {:?}", aux);
-                    value = Value::FieldAccess(Box::new(aux));
+                    value.value = ValueEnum::FieldAccess(Box::new(
+                        self.build_field_access(&mut eval.into_inner(), context),
+                    ));
                 }
-                Rule::string_value => value = self.build_string_value(eval, context),
-                Rule::integer => value = self.build_integer(eval, context),
-                Rule::float => value = self.build_float(eval, context),
-                Rule::r#bool => value = self.build_bool(eval, context),
-                Rule::r#char => value = self.build_char(eval, context),
+                Rule::string_value => value.value = self.build_string_value(eval, context),
+                Rule::integer => value.value = self.build_integer(eval, context),
+                Rule::float => value.value = self.build_float(eval, context),
+                Rule::r#bool => value.value = self.build_bool(eval, context),
+                Rule::r#char => value.value = self.build_char(eval, context),
                 Rule::type_casting => {
                     let eval = eval.into_inner().peek().unwrap();
-                    value = Value::Casting((
-                        Box::new(value),
+                    value.value = ValueEnum::Casting((
+                        Box::new(value.clone()),
                         self.build_datatype(&mut eval.into_inner(), context),
                     ))
                 }
                 Rule::value => value = self.build_value(&mut eval.into_inner(), context),
                 Rule::range => {
-                    value = Value::Range(self.build_range(&mut eval.into_inner(), context))
+                    value.value =
+                        ValueEnum::Range(self.build_range(&mut eval.into_inner(), context))
                 }
                 Rule::deref => {
-                    op_count += 1;
-                    ref_op = Some(RefOp::Dereference);
+                    value.op_count += 1;
+                    value.ref_op = Some(RefOp::Dereference);
                 }
                 Rule::r#ref => {
-                    op_count += 1;
-                    ref_op = Some(RefOp::Reference);
+                    value.op_count += 1;
+                    value.ref_op = Some(RefOp::Reference);
                 }
-                rule => unreachable!("{:?}", rule),
+                rule => unreachable!("Fucked up rule is {:?}", rule),
             };
         }
-        value
+        match value.value {
+            ValueEnum::FieldAccess(ref mut access) => {
+                access.op = value.ref_op.clone();
+                access.op_count = value.op_count as u8;
+                value
+            }
+            _ => value,
+        }
     }
 
     fn build_range(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> RangeValue {
         if pairs.len() > 1 {
-            let mut start = Value::Int(0);
-            let mut end = Value::Int(0);
+            let mut start = Value::default();
+            let mut end = Value::default();
             let mut range_type = RangeType::Exclusive;
             let mut changed = false;
             for pair in pairs {
@@ -646,7 +637,7 @@ impl NoirParser {
 
     fn build_field(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Field {
         let mut name = String::new();
-        let mut value = Parameter::Value(Value::Int(0));
+        let mut value = Parameter::Value(Value::default());
         for pair in pairs {
             match pair.as_rule() {
                 Rule::name_str => name = pair.as_str().into(),
@@ -658,23 +649,27 @@ impl NoirParser {
     }
 
     fn build_array_access(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> ArrayAccess {
-        let mut value = Value::Int(0);
-        let mut index = Value::Int(0);
+        let mut value = Value::default();
+        let mut index = Value::default();
         for pair in pairs {
             match pair.as_rule() {
-                Rule::call => value = Value::Call(self.build_call(&mut pair.into_inner(), context)),
+                Rule::call => {
+                    value.value = ValueEnum::Call(self.build_call(&mut pair.into_inner(), context))
+                }
                 Rule::value => index = self.build_value(&mut pair.into_inner(), context),
-                Rule::name => value = Value::Name(self.build_name(&mut pair.into_inner(), context)),
+                Rule::name => {
+                    value.value = ValueEnum::Name(self.build_name(&mut pair.into_inner(), context))
+                }
                 _ => unreachable!(),
             }
         }
         ArrayAccess { value, index }
     }
 
-    fn build_char(&self, pair: Pair<Rule>, context: &mut AstContext) -> Value {
+    fn build_char(&self, pair: Pair<Rule>, context: &mut AstContext) -> ValueEnum {
         let aux = pair.as_str();
         let aux = &aux[1..aux.len() - 1];
-        Value::Char(*aux.chars().peekable().peek().unwrap())
+        ValueEnum::Char(*aux.chars().peekable().peek().unwrap())
     }
 
     fn build_array(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Array {
@@ -698,7 +693,7 @@ impl NoirParser {
     }
 
     fn build_array_type(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> ArrayType {
-        let mut size = Value::Int(0);
+        let mut size = Value::default();
         let mut data_type = Type::default();
         for pair in pairs {
             match pair.as_rule() {
@@ -713,7 +708,7 @@ impl NoirParser {
     fn build_if(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> If {
         let mut value = If {
             not: false,
-            condition: Box::new(Value::Int(0)),
+            condition: Box::new(Value::default()),
             block: Box::new(Block {
                 expr: Vec::new(),
                 box_return: None,
@@ -748,8 +743,8 @@ impl NoirParser {
         };
     }
 
-    fn build_bool(&self, pair: Pair<Rule>, context: &mut AstContext) -> Value {
-        Value::Bool(pair.as_str().parse().unwrap())
+    fn build_bool(&self, pair: Pair<Rule>, context: &mut AstContext) -> ValueEnum {
+        ValueEnum::Bool(pair.as_str().parse().unwrap())
     }
 
     fn build_call(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Call {
@@ -815,21 +810,6 @@ impl NoirParser {
         FunctionKind::from_str(pair.as_str())
     }
 
-    fn build_atom(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Atom {
-        let mut atom = Atom {
-            is_neg: false,
-            value: Value::Int(0),
-        };
-        for pair in pairs {
-            match pair.as_rule() {
-                Rule::unary_minus => atom.is_neg = true,
-                Rule::primary => atom.value = self.build_value(&mut pair.into_inner(), context),
-                _ => unreachable!(),
-            };
-        }
-        atom
-    }
-
     fn build_block(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Block {
         let mut block = Block {
             expr: Vec::new(),
@@ -871,7 +851,7 @@ impl NoirParser {
         declaration
     }
 
-    fn build_string_value(&self, pair: Pair<Rule>, context: &mut AstContext) -> Value {
+    fn build_string_value(&self, pair: Pair<Rule>, context: &mut AstContext) -> ValueEnum {
         let mut literal = Vec::<String>::with_capacity(pair.as_str().len());
         let iterator = pair.as_str().chars();
         let mut escaping = false;
@@ -894,19 +874,19 @@ impl NoirParser {
                 };
             }
         }
-        Value::String(literal.concat())
+        ValueEnum::String(literal.concat())
     }
 
-    fn build_integer(&self, pair: Pair<Rule>, context: &mut AstContext) -> Value {
+    fn build_integer(&self, pair: Pair<Rule>, context: &mut AstContext) -> ValueEnum {
         let clone = pair.clone();
         if clone.into_inner().peek().is_some() {
-            return Value::UInt(pair.as_str()[1..].parse().unwrap());
+            return ValueEnum::UInt(pair.as_str()[1..].parse().unwrap());
         }
-        Value::Int(pair.as_str().trim().parse().unwrap())
+        ValueEnum::Int(pair.as_str().trim().parse().unwrap())
     }
 
-    fn build_float(&self, pair: Pair<Rule>, context: &mut AstContext) -> Value {
-        Value::Float(pair.as_str().parse().unwrap())
+    fn build_float(&self, pair: Pair<Rule>, context: &mut AstContext) -> ValueEnum {
+        ValueEnum::Float(pair.as_str().parse().unwrap())
     }
 
     fn build_name(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Name {

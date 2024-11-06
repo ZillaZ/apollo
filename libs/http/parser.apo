@@ -1,4 +1,41 @@
+use static std::strings::strings
+use static std::sockets::sockets
+
+struct Header {
+	key: string
+	value: string
+}
+
 struct HttpRequest {
 	headers: &Header
 	body: string
+}
+
+fn parse_request(data: &StreamData) {
+	let str = new_string_from(^data.data)
+	printf("REQUEST:\n%s\n", str.chars)
+	let split_result = split(&str, 10 as char)
+	let start = split(split_result.data, ' ')
+	let method = start.data[0]
+	let i = 1
+	let flag = false
+	while(i < split_result.count) {
+		let line = split_result.data[i]
+		let result = split(&line, ':')
+		printf("out checks\n")
+		if flag {
+			printf("body is %s\n", line.chars)
+		}
+		if line.chars[0] == 0  {
+			printf("newline only")
+			flag = true
+		}
+		if !flag && (result.count > 1) {
+			let header = result.data[1]
+			printf("header is %d\n", header.len)
+		}
+		i += 1
+	}
+	printf("%s\n", method.chars)
+	return
 }
