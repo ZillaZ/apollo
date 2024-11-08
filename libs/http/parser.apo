@@ -1,5 +1,5 @@
-use static std::strings::strings
-use static std::sockets::sockets
+use std::strings::strings
+use std::sockets::sockets
 
 struct Header {
 	key: string
@@ -30,7 +30,7 @@ fn parse_request(data: &StreamData) {
 			printf("newline only")
 			flag = true
 		}
-		if !flag && (result.count > 1) {
+		if (!flag) && (result.count > 1) {
 			let header = result.data[1]
 			printf("header is %d\n", header.len)
 		}

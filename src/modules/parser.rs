@@ -6,13 +6,15 @@ use pest::{
     iterators::{Pair, Pairs},
     pratt_parser::{Assoc, Op, PrattParser},
 };
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 #[derive(Clone, Debug)]
 pub struct Ast {
     pub namespace: String,
     pub expressions: Vec<Expr>,
-    pub imports: HashMap<Import, Box<Ast>>,
+    pub imports: HashMap<Import, Rc<RefCell<Ast>>>,
     pub context: AstContext,
 }
 
@@ -41,6 +43,7 @@ impl NoirParser {
     pub fn gen_ast(&self, pairs: &mut Pairs<Rule>, namespace: String) -> Ast {
         let namespace = namespace.split("::").last().unwrap().to_string();
         let mut context = AstContext::new();
+        context.scope = "main".to_string();
         let expressions = self.build_expression(pairs, &mut context);
         let imports = expressions
             .iter()
@@ -64,7 +67,7 @@ impl NoirParser {
         &self,
         imports: &Vec<Import>,
         context: &mut AstContext,
-    ) -> HashMap<Import, Box<Ast>> {
+    ) -> HashMap<Import, Rc<RefCell<Ast>>> {
         let mut rtn = HashMap::new();
         for import in imports {
             let lib_path = self.parse_import_path(&import);
@@ -73,7 +76,7 @@ impl NoirParser {
             let input = std::fs::read_to_string(lib_path).unwrap();
             let mut pairs: Pairs<Rule> = Program::parse(Rule::program, &input).unwrap();
             let ast = self.gen_ast(&mut pairs, import.name.clone());
-            rtn.insert(import.clone(), Box::new(ast));
+            rtn.insert(import.clone(), Rc::new(RefCell::new(ast)));
         }
         rtn
     }
@@ -124,9 +127,6 @@ impl NoirParser {
                     Expr::FieldAccess(self.build_field_access(&mut pair.into_inner(), context))
                 }
                 Rule::r#trait => Expr::Trait(self.build_trait(&mut pair.into_inner(), context)),
-                Rule::compiler_extension => {
-                    Expr::Extension(self.build_extension(&mut pair.into_inner(), context))
-                }
                 Rule::lib_link => Expr::Link(self.build_link(&mut pair.into_inner())),
                 Rule::r#while => {
                     Expr::While(self.build_while_loop(&mut pair.into_inner(), context))
@@ -138,7 +138,15 @@ impl NoirParser {
             };
             expressions.push(expr);
         }
-
+        context.variables.iter().for_each(|(_, y)| {
+            y.iter().for_each(|(x, y)| {
+                if y.heap_allocated {
+                    println!("{} is heap allocated", x)
+                } else {
+                    println!("{} is stack allocated. value set to {:?}", x, y)
+                }
+            })
+        });
         expressions
     }
 
@@ -175,9 +183,12 @@ impl NoirParser {
         for pair in pairs {
             match pair.as_rule() {
                 Rule::name => pivot = pair.as_str().to_string(),
-                Rule::value => range = self.build_value(&mut pair.into_inner(), context),
+                Rule::bvalue => range = self.build_bvalue(&mut pair.into_inner(), context),
+                Rule::binary_operation => {
+                    range = self.build_binary_op(&mut pair.into_inner(), context)
+                }
                 Rule::block => block = self.build_block(&mut pair.into_inner(), context),
-                _ => todo!(),
+                rule => unreachable!("Found rule {:?} while building for loop", rule),
             }
         }
         ForLoop {
@@ -190,16 +201,19 @@ impl NoirParser {
     fn build_while_loop(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> WhileLoop {
         let mut condition = Value::default();
         let mut block = Block::default();
-        for pair in pairs {
+        for mut pair in pairs {
             match pair.as_rule() {
-                Rule::value => condition = self.build_value(&mut pair.into_inner(), context),
+                Rule::bvalue
+                | Rule::base_value
+                | Rule::unary_operation
+                | Rule::binary_operation => condition = self.build_single_value(&mut pair, context),
                 Rule::block => block = self.build_block(&mut pair.into_inner(), context),
-                _ => unreachable!(),
+                rule => unreachable!("Found rule {:?} while building while loop", rule),
             }
         }
         WhileLoop {
             condition,
-            block: Box::new(block),
+            block: Rc::new(RefCell::new(block)),
         }
     }
 
@@ -209,21 +223,6 @@ impl NoirParser {
         LibLink {
             lib_name: eval.as_str()[1..eval.as_str().len() - 1].trim().into(),
         }
-    }
-
-    fn build_extension(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Extension {
-        let mut rtn = Extension {
-            name: String::new(),
-            body: String::new(),
-        };
-        for pair in pairs {
-            match pair.as_rule() {
-                Rule::name_str => rtn.name = pair.as_str().into(),
-                Rule::string_value => rtn.body = pair.as_str().into(),
-                _ => unreachable!(),
-            }
-        }
-        rtn
     }
 
     fn build_trait(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Trait {
@@ -289,12 +288,7 @@ impl NoirParser {
         };
         for pair in pairs {
             match pair.as_rule() {
-                Rule::r#static => import.kind = ImportKind::Static,
-                Rule::r#dyn => import.kind = ImportKind::Dynamic,
                 Rule::namespace => import.name = self.build_namespace(&mut pair.into_inner()),
-                Rule::imported_fn => {
-                    import.imported = self.build_imported_fn(&mut pair.into_inner())
-                }
                 _ => unreachable!(),
             }
         }
@@ -322,6 +316,16 @@ impl NoirParser {
         vec.join("::")
     }
 
+    fn build_single_value(&self, pair: &mut Pair<Rule>, context: &mut AstContext) -> Value {
+        match pair.as_rule() {
+            Rule::binary_operation => self.build_binary_op(&mut pair.clone().into_inner(), context),
+            Rule::unary_operation => self.build_unary_op(&mut pair.clone().into_inner(), context),
+            Rule::bvalue => self.build_bvalue(&mut pair.clone().into_inner(), context),
+            Rule::base_value => self.build_base(&mut pair.clone().into_inner(), context),
+            rule => unreachable!("Found rule {:?} while building single value", rule),
+        }
+    }
+
     fn build_overloaded(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Overloaded {
         let mut lhs = OverloadedLHS::Name(Name {
             name: String::new(),
@@ -330,7 +334,7 @@ impl NoirParser {
         });
         let mut op = OverloadedOp::Add;
         let mut rhs = Value::default();
-        for pair in pairs {
+        for mut pair in pairs {
             match pair.as_rule() {
                 Rule::name => {
                     lhs = OverloadedLHS::Name(self.build_name(&mut pair.into_inner(), context))
@@ -343,8 +347,11 @@ impl NoirParser {
                 Rule::overloaded_ops => {
                     op = self.build_overloaded_op(&mut pair.into_inner(), context)
                 }
-                Rule::value => rhs = self.build_value(&mut pair.into_inner(), context),
-                _ => unreachable!(),
+                Rule::bvalue
+                | Rule::base_value
+                | Rule::unary_operation
+                | Rule::binary_operation => rhs = self.build_single_value(&mut pair, context),
+                rule => unreachable!("Found rule {:?} while building overloaded op", rule),
             }
         }
         Overloaded { lhs, op, rhs }
@@ -372,7 +379,7 @@ impl NoirParser {
             op_count: 0,
         });
         let mut value = Value::default();
-        for pair in pairs {
+        for mut pair in pairs {
             match pair.as_rule() {
                 Rule::array_access => {
                     var =
@@ -386,8 +393,11 @@ impl NoirParser {
                         self.build_field_access(&mut pair.into_inner(), context),
                     )
                 }
-                Rule::value => value = self.build_value(&mut pair.into_inner(), context),
-                _ => unreachable!(),
+                Rule::unary_operation
+                | Rule::bvalue
+                | Rule::base_value
+                | Rule::binary_operation => value = self.build_single_value(&mut pair, context),
+                rule => unreachable!("Found rule {:?} while building assignment", rule),
             }
         }
         Assignment { var, value }
@@ -414,27 +424,18 @@ impl NoirParser {
                 Rule::cmp_eq => op = Operations::Eq,
                 Rule::neq => op = Operations::Neq,
                 Rule::modulo => op = Operations::Modulo,
-                Rule::op_value => {
-                    if changed {
-                        rhs = self.build_value(&mut pair.into_inner(), context);
-                        changed = false
-                    } else {
-                        lhs = self.build_value(&mut pair.into_inner(), context);
-                        changed = true
-                    }
-                }
                 _ => unreachable!("Infix wtf"),
             }
         }
         if !changed {
             Operation::BinaryOp(BinaryOp {
-                lhs: Box::new(lhs),
+                lhs: Rc::new(RefCell::new(lhs)),
                 op,
-                rhs: Box::new(rhs),
+                rhs: Rc::new(RefCell::new(rhs)),
             })
         } else {
             Operation::UnaryOp(UnaryOp {
-                value: Box::new(lhs),
+                value: Rc::new(RefCell::new(lhs)),
                 prefix: op,
             })
         }
@@ -449,25 +450,51 @@ impl NoirParser {
         }
     }
 
-    fn build_value(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Value {
+    fn build_unary_op(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Value {
+        let mut op = Operations::Neg;
         let mut value = Value::default();
-        for eval in pairs {
+        for pair in pairs {
+            match pair.as_rule() {
+                Rule::unary_minus => op = Operations::Neg,
+                Rule::not => op = Operations::Not,
+                Rule::bvalue => value = self.build_bvalue(&mut pair.into_inner(), context),
+                rule => unreachable!("Found rule {:?} while building unary operation", rule),
+            }
+        }
+        let mut rtn = Value::default();
+        rtn.value = ValueEnum::UnaryOp(Rc::new(RefCell::new(UnaryOp {
+            prefix: op,
+            value: Rc::new(RefCell::new(value)),
+        })));
+        rtn
+    }
+
+    fn build_bvalue(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Value {
+        let mut value = Value::default();
+        for pair in pairs {
+            match pair.as_rule() {
+                Rule::base_value => value = self.build_base(&mut pair.into_inner(), context),
+                Rule::type_casting => {
+                    let eval = pair.into_inner().peek().unwrap();
+                    value.value = ValueEnum::Casting((
+                        Rc::new(RefCell::new(value.clone())),
+                        self.build_datatype(&mut eval.into_inner(), context),
+                    ))
+                }
+                rule => unreachable!("Found rule {:?} while building bvalue", rule),
+            }
+        }
+        value
+    }
+
+    fn build_base(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Value {
+        let mut value = Value::default();
+        for mut eval in pairs {
             match eval.as_rule() {
-                Rule::operation => {
-                    value.value = ValueEnum::Operation(Box::new(
-                        self.build_operation(&mut eval.into_inner(), context),
-                    ))
-                }
-                Rule::op_value => value = self.build_value(&mut eval.into_inner(), context),
-                Rule::non_op_value => value = self.build_value(&mut eval.into_inner(), context),
-                Rule::unary_minus => value.neg = true,
                 Rule::call => {
-                    value.value = ValueEnum::Call(self.build_call(&mut eval.into_inner(), context));
-                }
-                Rule::block => {
-                    value.value = ValueEnum::Block(Box::new(
-                        self.build_block(&mut eval.into_inner(), context),
-                    ))
+                    let call = self.build_call(&mut eval.into_inner(), context);
+                    value.heap_allocated = call.name.name.as_str() == "malloc";
+                    value.value = ValueEnum::Call(call);
                 }
                 Rule::name => {
                     value.value = ValueEnum::Name(self.build_name(&mut eval.into_inner(), context))
@@ -480,55 +507,98 @@ impl NoirParser {
                         ValueEnum::Array(self.build_array(&mut eval.into_inner(), context))
                 }
                 Rule::array_access => {
-                    value.value = ValueEnum::ArrayAccess(Box::new(
+                    value.value = ValueEnum::ArrayAccess(Rc::new(RefCell::new(
                         self.build_array_access(&mut eval.into_inner(), context),
-                    ))
+                    )))
                 }
                 Rule::constructor => {
-                    value.value = ValueEnum::Constructor(Box::new(
+                    value.value = ValueEnum::Constructor(Rc::new(RefCell::new(
                         self.build_constructor(&mut eval.into_inner(), context),
-                    ))
+                    )));
+                    println!("processed {:?}", value.value);
                 }
                 Rule::field_access => {
-                    value.value = ValueEnum::FieldAccess(Box::new(
+                    value.value = ValueEnum::FieldAccess(Rc::new(RefCell::new(
                         self.build_field_access(&mut eval.into_inner(), context),
-                    ));
+                    )));
                 }
-                Rule::string_value => value.value = self.build_string_value(eval, context),
+                Rule::string => value.value = self.build_string_value(eval, context),
                 Rule::integer => value.value = self.build_integer(eval, context),
                 Rule::float => value.value = self.build_float(eval, context),
                 Rule::r#bool => value.value = self.build_bool(eval, context),
-                Rule::r#char => value.value = self.build_char(eval, context),
+                Rule::char_value => value.value = self.build_char(eval, context),
                 Rule::type_casting => {
                     let eval = eval.into_inner().peek().unwrap();
                     value.value = ValueEnum::Casting((
-                        Box::new(value.clone()),
+                        Rc::new(RefCell::new(value.clone())),
                         self.build_datatype(&mut eval.into_inner(), context),
                     ))
                 }
-                Rule::value => value = self.build_value(&mut eval.into_inner(), context),
+                Rule::unary_operation
+                | Rule::bvalue
+                | Rule::base_value
+                | Rule::binary_operation => value = self.build_single_value(&mut eval, context),
                 Rule::range => {
                     value.value =
                         ValueEnum::Range(self.build_range(&mut eval.into_inner(), context))
                 }
-                Rule::deref => {
-                    value.op_count += 1;
-                    value.ref_op = Some(RefOp::Dereference);
-                }
-                Rule::r#ref => {
-                    value.op_count += 1;
-                    value.ref_op = Some(RefOp::Reference);
-                }
                 rule => unreachable!("Fucked up rule is {:?}", rule),
             };
         }
-        match value.value {
-            ValueEnum::FieldAccess(ref mut access) => {
-                access.op = value.ref_op.clone();
-                access.op_count = value.op_count as u8;
-                value
-            }
-            _ => value,
+        value
+    }
+
+    fn build_binary_op(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Value {
+        let mut lhs = Value::default();
+        let mut rhs = Value::default();
+        let mut changed = false;
+        let mut op = Operations::Add;
+        for pair in pairs {
+            match pair.as_rule() {
+                Rule::bvalue => {
+                    let value = self.build_bvalue(&mut pair.into_inner(), context);
+                    if changed {
+                        rhs = value;
+                    } else {
+                        lhs = value;
+                        changed = true
+                    }
+                }
+                Rule::unary_minus => op = Operations::Sub,
+                Rule::add => op = Operations::Add,
+                Rule::sub => op = Operations::Sub,
+                Rule::mul => op = Operations::Mul,
+                Rule::div => op = Operations::Div,
+                Rule::and => op = Operations::And,
+                Rule::or => op = Operations::Or,
+                Rule::lt => op = Operations::Lt,
+                Rule::gt => op = Operations::Gt,
+                Rule::lte => op = Operations::Lte,
+                Rule::gte => op = Operations::Gte,
+                Rule::cmp_eq => op = Operations::Eq,
+                Rule::neq => op = Operations::Neq,
+                Rule::modulo => op = Operations::Modulo,
+                _ => todo!(),
+            };
+        }
+        let mut rtn = Value::default();
+        rtn.value = ValueEnum::BinaryOp(Rc::new(RefCell::new(BinaryOp {
+            lhs: Rc::new(RefCell::new(lhs)),
+            op,
+            rhs: Rc::new(RefCell::new(rhs)),
+        })));
+        rtn
+    }
+
+    fn build_value(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Value {
+        let mut peekable = pairs.peekable();
+        let pair = peekable.peek().unwrap();
+        match pair.as_rule() {
+            Rule::binary_operation => self.build_binary_op(&mut pair.clone().into_inner(), context),
+            Rule::unary_op => self.build_unary_op(&mut pair.clone().into_inner(), context),
+            Rule::bvalue => self.build_bvalue(&mut pair.clone().into_inner(), context),
+            Rule::base_value => self.build_base(&mut pair.clone().into_inner(), context),
+            rule => unreachable!("Found rule {:?} while building value", rule),
         }
     }
 
@@ -540,33 +610,34 @@ impl NoirParser {
             let mut changed = false;
             for pair in pairs {
                 match pair.as_rule() {
-                    Rule::value => {
+                    Rule::binary_op => {
                         if changed {
-                            end = self.build_value(&mut pair.into_inner(), context);
+                            end = self.build_binary_op(&mut pair.into_inner(), context);
                         } else {
-                            start = self.build_value(&mut pair.into_inner(), context);
+                            start = self.build_binary_op(&mut pair.into_inner(), context);
                             changed = true;
                         }
                     }
                     Rule::range_type => {
                         range_type = self.build_range_type(&mut pair.into_inner(), context)
                     }
-                    _ => todo!(),
+                    rule => unreachable!("Found rule {:?} while building range", rule),
                 }
             }
-            RangeValue::Range(Box::new(Range {
+            RangeValue::Range(Rc::new(RefCell::new(Range {
                 start,
                 range_type,
                 end,
-            }))
+            })))
         } else {
             let value = pairs.peek().unwrap();
-            match value.as_rule() {
-                Rule::value => RangeValue::Iterable(Box::new(
-                    self.build_value(&mut value.into_inner(), context),
-                )),
-                _ => todo!(),
-            }
+            RangeValue::Iterable(Rc::new(RefCell::new(match value.as_rule() {
+                Rule::binary_operation => self.build_binary_op(&mut value.into_inner(), context),
+                Rule::bvalue => self.build_bvalue(&mut value.into_inner(), context),
+                Rule::base_value => self.build_base(&mut value.into_inner(), context),
+                Rule::unary_operation => self.build_unary_op(&mut value.into_inner(), context),
+                rule => unreachable!("Found rule {:?} while building iterable range", rule),
+            })))
         }
     }
 
@@ -580,10 +651,11 @@ impl NoirParser {
     }
 
     fn build_field_access(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> FieldAccess {
-        let mut head: Option<Box<FieldAccess>> = None;
-        let mut prev = &mut head;
+        let mut head: FieldAccess = FieldAccess::default();
+        let mut next = head.next.clone();
         let mut op_count = 0;
         let mut ref_op = None;
+        let mut flag = false;
 
         for pair in pairs {
             let mut name = FieldAccessName::Name(Name::default());
@@ -609,17 +681,28 @@ impl NoirParser {
                 }
                 rule => unreachable!("Found rule {:?}", rule),
             };
-            let next = Box::new(FieldAccess {
+            let field_access = FieldAccess {
                 name,
-                next: None,
+                next: Rc::new(RefCell::new(None)),
                 op: ref_op.clone(),
                 op_count,
-            });
-            prev.replace(next.clone());
-            prev = &mut prev.as_mut().expect("prev is sus").next;
+            };
+            if !flag {
+                head = field_access;
+                next = head.next.clone();
+                flag = true;
+            } else {
+                next.swap(&Rc::new(RefCell::new(Some(field_access))));
+                next = Rc::make_mut(&mut next)
+                    .get_mut()
+                    .as_mut()
+                    .unwrap()
+                    .next
+                    .clone();
+            }
         }
-
-        *head.unwrap()
+        println!("{:?}", head);
+        head
     }
 
     fn build_constructor(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Constructor {
@@ -637,12 +720,19 @@ impl NoirParser {
 
     fn build_field(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Field {
         let mut name = String::new();
-        let mut value = Parameter::Value(Value::default());
+        let mut value = Value::default();
         for pair in pairs {
             match pair.as_rule() {
                 Rule::name_str => name = pair.as_str().into(),
-                Rule::param => value = self.build_param(&mut pair.into_inner(), context),
-                _ => unreachable!(),
+                Rule::unary_operation => {
+                    value = self.build_unary_op(&mut pair.into_inner(), context)
+                }
+                Rule::bvalue => value = self.build_bvalue(&mut pair.into_inner(), context),
+                Rule::binary_operation => {
+                    value = self.build_binary_op(&mut pair.into_inner(), context)
+                }
+                Rule::base_value => value = self.build_base(&mut pair.into_inner(), context),
+                rule => unreachable!("Found rule {:?} while building field", rule),
             }
         }
         Field { name, value }
@@ -656,11 +746,15 @@ impl NoirParser {
                 Rule::call => {
                     value.value = ValueEnum::Call(self.build_call(&mut pair.into_inner(), context))
                 }
-                Rule::value => index = self.build_value(&mut pair.into_inner(), context),
+                Rule::binary_operation => {
+                    index = self.build_binary_op(&mut pair.into_inner(), context)
+                }
+                Rule::unary_op => index = self.build_unary_op(&mut pair.into_inner(), context),
+                Rule::bvalue => index = self.build_bvalue(&mut pair.into_inner(), context),
                 Rule::name => {
                     value.value = ValueEnum::Name(self.build_name(&mut pair.into_inner(), context))
                 }
-                _ => unreachable!(),
+                rule => unreachable!("Found rule {:?} while building array access", rule),
             }
         }
         ArrayAccess { value, index }
@@ -682,11 +776,11 @@ impl NoirParser {
         for pair in pairs {
             match pair.as_rule() {
                 Rule::datatype => datatype = self.build_datatype(&mut pair.into_inner(), context),
-                Rule::value => {
-                    let element = self.build_value(&mut pair.into_inner(), context);
+                Rule::binary_op => {
+                    let element = self.build_binary_op(&mut pair.into_inner(), context);
                     elements.push(element);
                 }
-                _ => unreachable!(),
+                rule => unreachable!("Found rule {:?} while building array", rule),
             }
         }
         Array { datatype, elements }
@@ -697,9 +791,9 @@ impl NoirParser {
         let mut data_type = Type::default();
         for pair in pairs {
             match pair.as_rule() {
-                Rule::value => size = self.build_value(&mut pair.into_inner(), context),
+                Rule::binary_op => size = self.build_binary_op(&mut pair.into_inner(), context),
                 Rule::datatype => data_type = self.build_datatype(&mut pair.into_inner(), context),
-                rule => unreachable!("{:?}", rule),
+                rule => unreachable!("Found {:?} while building array type", rule),
             }
         }
         ArrayType { size, data_type }
@@ -708,27 +802,42 @@ impl NoirParser {
     fn build_if(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> If {
         let mut value = If {
             not: false,
-            condition: Box::new(Value::default()),
-            block: Box::new(Block {
+            condition: Rc::new(RefCell::new(Value::default())),
+            block: Rc::new(RefCell::new(Block {
                 expr: Vec::new(),
                 box_return: None,
-            }),
+            })),
             otherwise: None,
         };
         for pair in pairs {
             match pair.as_rule() {
                 Rule::not => value.not = true,
-                Rule::value => {
-                    value.condition = Box::new(self.build_value(&mut pair.into_inner(), context))
+                Rule::binary_operation => {
+                    value.condition = Rc::new(RefCell::new(
+                        self.build_binary_op(&mut pair.into_inner(), context),
+                    ))
+                }
+                Rule::bvalue => {
+                    value.condition = Rc::new(RefCell::new(
+                        self.build_bvalue(&mut pair.into_inner(), context),
+                    ))
+                }
+                Rule::base_value => {
+                    value.condition = Rc::new(RefCell::new(
+                        self.build_base(&mut pair.into_inner(), context),
+                    ))
                 }
                 Rule::block => {
-                    value.block = Box::new(self.build_block(&mut pair.into_inner(), context))
+                    value.block = Rc::new(RefCell::new(
+                        self.build_block(&mut pair.into_inner(), context),
+                    ))
                 }
                 Rule::otherwise => {
-                    value.otherwise =
-                        Box::new(self.build_otherwise(&mut pair.into_inner(), context)).into()
+                    value.otherwise = Some(Rc::new(RefCell::new(
+                        self.build_otherwise(&mut pair.into_inner(), context),
+                    )))
                 }
-                rule => unreachable!("{:?}", rule),
+                rule => unreachable!("Found rule {:?} while building if", rule),
             };
         }
         value
@@ -757,14 +866,13 @@ impl NoirParser {
             },
             args: Vec::new(),
         };
-        for eval in pairs {
-            match eval.as_rule() {
-                Rule::name => call.name = self.build_name(&mut eval.into_inner(), context),
-                Rule::param => call
+        for pair in pairs {
+            match pair.as_rule() {
+                Rule::name => call.name = self.build_name(&mut pair.into_inner(), context),
+                Rule::arg => call
                     .args
-                    .push(self.build_param(&mut eval.into_inner(), context)),
-                Rule::v => continue,
-                _ => unreachable!(),
+                    .push(self.build_value(&mut pair.into_inner(), context)),
+                rule => unreachable!("Found rule {:?}", rule),
             }
         }
         call
@@ -780,26 +888,33 @@ impl NoirParser {
             },
             args: Vec::new(),
             return_type: None,
-            block: Box::new(Block {
+            block: Rc::new(RefCell::new(Block {
                 expr: Vec::new(),
                 box_return: None,
-            }),
+            })),
         };
+        let aux = context.scope.clone();
         for pair in pairs.clone() {
             match pair.as_rule() {
                 Rule::function_kind => function.kind = self.build_function_kind(&pair, context),
-                Rule::name => function.name = self.build_name(&mut pair.into_inner(), context),
+                Rule::name => {
+                    function.name = self.build_name(&mut pair.into_inner(), context);
+                    context.scope = function.name.name.clone();
+                }
                 Rule::args => function.args = self.build_args(&mut pair.into_inner(), context),
                 Rule::datatype => {
                     function.return_type =
                         Some(self.build_datatype(&mut pair.into_inner(), context))
                 }
                 Rule::block => {
-                    function.block = Box::new(self.build_block(&mut pair.into_inner(), context))
+                    function.block = Rc::new(RefCell::new(
+                        self.build_block(&mut pair.into_inner(), context),
+                    ))
                 }
                 _ => unreachable!(),
             }
         }
+        context.scope = aux;
         context
             .functions
             .insert(function.name.name.clone(), function.clone());
@@ -810,6 +925,40 @@ impl NoirParser {
         FunctionKind::from_str(pair.as_str())
     }
 
+    fn is_struct_heap_allocated(
+        &self,
+        constructor: &mut Rc<RefCell<Constructor>>,
+        context: &mut AstContext,
+    ) -> bool {
+        for field in Rc::get_mut(constructor).unwrap().get_mut().fields.iter() {
+            if field.value.heap_allocated {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn is_variable_heap_allocated(&self, name: &Name, context: &mut AstContext) -> bool {
+        let binding = context.variables.get_mut(&context.scope).unwrap();
+        if let Some(value) = binding.get(&name.name) {
+            return value.heap_allocated;
+        }
+        false
+    }
+
+    fn is_operation_heap_allocated(
+        &self,
+        operation: &mut Rc<RefCell<Operation>>,
+        context: &mut AstContext,
+    ) -> bool {
+        match Rc::get_mut(operation).unwrap().get_mut() {
+            Operation::UnaryOp(ref mut op) => {
+                Rc::get_mut(&mut op.value).unwrap().get_mut().heap_allocated
+            }
+            _ => false,
+        }
+    }
+
     fn build_block(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Block {
         let mut block = Block {
             expr: Vec::new(),
@@ -818,8 +967,22 @@ impl NoirParser {
         let expressions = self.build_expression(pairs, context);
         for expression in expressions {
             match expression {
-                Expr::Return(r#return) => block.box_return = Some(r#return),
-                val => block.expr.push(Box::new(val)),
+                Expr::Return(mut r#return) => {
+                    if let Some(ref mut val) = r#return.value {
+                        match val.value {
+                            ValueEnum::Array(_) | ValueEnum::String(_) => val.heap_allocated = true,
+                            ValueEnum::Constructor(ref mut cons) => {
+                                val.heap_allocated = self.is_struct_heap_allocated(cons, context)
+                            }
+                            ValueEnum::Name(ref name) => {
+                                val.heap_allocated = self.is_variable_heap_allocated(name, context)
+                            }
+                            _ => (),
+                        };
+                    }
+                    block.box_return = Some(r#return);
+                }
+                val => block.expr.push(Rc::new(RefCell::new(val))),
             }
         }
         block
@@ -838,15 +1001,28 @@ impl NoirParser {
         for pair in pairs {
             match pair.as_rule() {
                 Rule::name => declaration.name = self.build_name(&mut pair.into_inner(), context),
-                Rule::value => {
-                    declaration.value = Some(self.build_value(&mut pair.into_inner(), context))
+                Rule::binary_operation => {
+                    declaration.value = Some(self.build_binary_op(&mut pair.into_inner(), context))
+                }
+                Rule::bvalue => {
+                    declaration.value = Some(self.build_bvalue(&mut pair.into_inner(), context))
+                }
+                Rule::base_value => {
+                    declaration.value = Some(self.build_base(&mut pair.into_inner(), context))
                 }
                 Rule::datatype => {
                     declaration.datatype =
                         Some(self.build_datatype(&mut pair.into_inner(), context))
                 }
-                _ => unreachable!(),
+                rule => unreachable!("Found rule {:?} while building declaration", rule),
             }
+        }
+        if let Some(ref value) = declaration.value {
+            let binding = context
+                .variables
+                .entry(context.scope.clone())
+                .or_insert(HashMap::new());
+            binding.insert(declaration.name.name.clone(), value.clone());
         }
         declaration
     }
@@ -914,13 +1090,25 @@ impl NoirParser {
         let pair = pairs.next().unwrap();
         match pair.as_rule() {
             Rule::name => Parameter::Name(self.build_name(&mut pair.into_inner(), context)),
-            Rule::value => Parameter::Value(self.build_value(&mut pair.into_inner(), context)),
-            _ => unreachable!(),
+            Rule::binary_op => {
+                Parameter::Value(self.build_binary_op(&mut pair.into_inner(), context))
+            }
+            rule => unreachable!("Found rule {:?} while building param", rule),
         }
     }
 
     fn build_args(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Vec<Arg> {
         let mut args = Vec::new();
+        for pair in pairs {
+            match pair.as_rule() {
+                Rule::parameter => args.push(self.build_arg(&mut pair.into_inner(), context)),
+                rule => unreachable!("{:?}", rule),
+            }
+        }
+        args
+    }
+
+    fn build_arg(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Arg {
         let mut arg = Arg {
             name: Name {
                 name: String::new(),
@@ -931,18 +1119,14 @@ impl NoirParser {
         };
         for pair in pairs {
             match pair.as_rule() {
-                Rule::v => args.push(arg.clone()),
                 Rule::name => arg.name = self.build_name(&mut pair.into_inner(), context),
                 Rule::datatype => {
                     arg.datatype = self.build_datatype(&mut pair.into_inner(), context)
                 }
-                rule => unreachable!("{:?}", rule),
+                _ => unreachable!(),
             }
         }
-        if arg.name.name.as_str() != "" {
-            args.push(arg.clone());
-        }
-        args
+        arg
     }
 
     fn build_datatype(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Type {
@@ -956,14 +1140,14 @@ impl NoirParser {
                 }
                 Rule::int_type => datatype = self.build_int_type(&mut pair.into_inner(), context),
                 Rule::r#struct => {
-                    datatype = DataType::Struct(Box::new(
+                    datatype = DataType::Struct(Rc::new(RefCell::new(
                         self.build_struct(&mut pair.into_inner(), context),
-                    ))
+                    )))
                 }
                 Rule::array_type => {
-                    datatype = DataType::Array(Box::new(
+                    datatype = DataType::Array(Rc::new(RefCell::new(
                         self.build_array_type(&mut pair.into_inner(), context),
-                    ))
+                    )))
                 }
                 Rule::struct_type => {
                     datatype = DataType::StructType(

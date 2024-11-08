@@ -1,4 +1,5 @@
 use super::{ast_context::AstContext, parser::Ast};
+use std::{cell::RefCell, rc::Rc};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Trait {
@@ -28,14 +29,14 @@ pub enum Operations {
 #[derive(Clone, Debug, PartialEq)]
 pub struct UnaryOp {
     pub prefix: Operations,
-    pub value: Box<Value>,
+    pub value: Rc<RefCell<Value>>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct BinaryOp {
-    pub lhs: Box<Value>,
+    pub lhs: Rc<RefCell<Value>>,
     pub op: Operations,
-    pub rhs: Box<Value>,
+    pub rhs: Rc<RefCell<Value>>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -60,8 +61,8 @@ pub enum DataType {
     Float(u8),
     Int(u8),
     UInt(u8),
-    Array(Box<ArrayType>),
-    Struct(Box<StructDecl>),
+    Array(Rc<RefCell<ArrayType>>),
+    Struct(Rc<RefCell<StructDecl>>),
     StructType(String),
     Trait(String),
     String,
@@ -145,7 +146,7 @@ pub struct Assignment {
 pub struct Call {
     pub neg: bool,
     pub name: Name,
-    pub args: Vec<Parameter>,
+    pub args: Vec<Value>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -179,13 +180,24 @@ pub struct FieldAccess {
     pub op: Option<RefOp>,
     pub op_count: u8,
     pub name: FieldAccessName,
-    pub next: Option<Box<FieldAccess>>,
+    pub next: Rc<RefCell<Option<FieldAccess>>>,
+}
+
+impl Default for FieldAccess {
+    fn default() -> Self {
+        Self {
+            op: None,
+            op_count: 0,
+            name: FieldAccessName::Name(Name::default()),
+            next: Rc::new(RefCell::new(None)),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Field {
     pub name: String,
-    pub value: Parameter,
+    pub value: Value,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -196,22 +208,23 @@ pub struct Constructor {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ValueEnum {
-    Casting((Box<Value>, Type)),
-    Operation(Box<Operation>),
+    Casting((Rc<RefCell<Value>>, Type)),
+    BinaryOp(Rc<RefCell<BinaryOp>>),
+    UnaryOp(Rc<RefCell<UnaryOp>>),
     Call(Call),
     String(String),
     Int(i32),
     UInt(u32),
     Float(f32),
-    Block(Box<Block>),
+    Block(Rc<RefCell<Block>>),
     Name(Name),
     Bool(bool),
     If(If),
     Char(char),
     Array(Array),
-    ArrayAccess(Box<ArrayAccess>),
-    Constructor(Box<Constructor>),
-    FieldAccess(Box<FieldAccess>),
+    ArrayAccess(Rc<RefCell<ArrayAccess>>),
+    Constructor(Rc<RefCell<Constructor>>),
+    FieldAccess(Rc<RefCell<FieldAccess>>),
     Range(RangeValue),
     None,
 }
@@ -220,9 +233,6 @@ pub enum ValueEnum {
 pub struct Value {
     pub heap_allocated: bool,
     pub value: ValueEnum,
-    pub ref_op: Option<RefOp>,
-    pub op_count: i32,
-    pub neg: bool,
 }
 
 impl Default for Value {
@@ -230,9 +240,6 @@ impl Default for Value {
         Self {
             heap_allocated: false,
             value: ValueEnum::Int(0),
-            ref_op: None,
-            op_count: 0,
-            neg: false,
         }
     }
 }
@@ -256,15 +263,19 @@ pub struct Return {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Block {
-    pub expr: Vec<Box<Expr>>,
+    pub expr: Vec<Rc<RefCell<Expr>>>,
     pub box_return: Option<Return>,
 }
 
 impl Block {
-    pub fn to_ast(&self) -> Ast {
+    pub fn to_ast(&mut self) -> Ast {
         Ast {
             namespace: "nil".into(),
-            expressions: self.expr.iter().map(|x| *x.clone()).collect::<Vec<_>>(),
+            expressions: self
+                .expr
+                .iter_mut()
+                .map(|x| Rc::make_mut(x).get_mut().clone())
+                .collect::<Vec<_>>(),
             imports: std::collections::HashMap::new(),
             context: AstContext::new(),
         }
@@ -300,7 +311,6 @@ impl FunctionKind {
             Exported => FunctionType::Exported,
             External => FunctionType::Extern,
             Native => FunctionType::Internal,
-            _ => unreachable!(),
         }
     }
 }
@@ -311,7 +321,7 @@ pub struct Function {
     pub name: Name,
     pub args: Vec<Arg>,
     pub return_type: Option<Type>,
-    pub block: Box<Block>,
+    pub block: Rc<RefCell<Block>>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -337,15 +347,9 @@ pub enum Otherwise {
 #[derive(Clone, Debug, PartialEq)]
 pub struct If {
     pub not: bool,
-    pub condition: Box<Value>,
-    pub block: Box<Block>,
-    pub otherwise: Option<Box<Otherwise>>,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct Extension {
-    pub name: String,
-    pub body: String,
+    pub condition: Rc<RefCell<Value>>,
+    pub block: Rc<RefCell<Block>>,
+    pub otherwise: Option<Rc<RefCell<Otherwise>>>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -390,7 +394,7 @@ pub struct Import {
 #[derive(Clone, Debug, PartialEq)]
 pub struct WhileLoop {
     pub condition: Value,
-    pub block: Box<Block>,
+    pub block: Rc<RefCell<Block>>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -409,8 +413,8 @@ pub struct Range {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum RangeValue {
-    Iterable(Box<Value>),
-    Range(Box<Range>),
+    Iterable(Rc<RefCell<Value>>),
+    Range(Rc<RefCell<Range>>),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -433,7 +437,6 @@ pub enum Expr {
     StructDecl(StructDecl),
     FieldAccess(FieldAccess),
     Trait(Trait),
-    Extension(Extension),
     Link(LibLink),
     While(WhileLoop),
     For(ForLoop),

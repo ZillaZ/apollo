@@ -1,7 +1,7 @@
-use static std::threads::threads
-use static std::sockets::sockets
-use static std::strings::strings
-use static std::http::parser
+use std::threads::threads
+use std::sockets::sockets
+use std::strings::strings
+use std::http::parser
 
 fn read(stream: Any) {
 	let stream = stream as &TcpStream

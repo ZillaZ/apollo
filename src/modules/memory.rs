@@ -27,8 +27,6 @@ pub struct Memory<'a> {
     pub function_addresses: HashMap<String, RValue<'a>>,
     pub pointer_types: HashSet<Type<'a>>,
     pub imports: HashSet<String>,
-    pub memory_tree: Vec<Box<Memory<'a>>>,
-    pub extensions: HashMap<String, Box<dyn Fn(Vec<GccValues>) -> GccValues>>,
 }
 
 impl<'a> Memory<'a> {
@@ -58,8 +56,6 @@ impl<'a> Memory<'a> {
         let function_addresses = HashMap::new();
         let pointer_types = HashSet::new();
         let imports = HashSet::new();
-        let memory_tree = Vec::new();
-        let extensions = HashMap::new();
         Self {
             name,
             last_block,
@@ -84,8 +80,6 @@ impl<'a> Memory<'a> {
             field_types,
             pointer_types,
             imports,
-            memory_tree,
-            extensions,
         }
     }
     pub fn unconst_type(&self, r#type: Type<'a>) -> Type<'a> {
