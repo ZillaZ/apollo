@@ -1,22 +1,23 @@
-use std::threads::threads
-use std::sockets::sockets
-use std::strings::strings
-use std::http::parser
+enum Result {
+	Ok(i4)
+	Err(string)
+}
 
-fn read(stream: Any) {
-	let stream = stream as &TcpStream
-	let data = read_tcp(stream)
-	parse_request(data)
-	thread_exit(stream)
+fn print(self: Result) {
+	if self.Ok(result) {
+		printf("Ok %d\n", result)
+	} else if self.Err(error) {
+		printf("Err %s\n", error)
+	}
 	return
 }
 
-let address = "127.0.0.1:8080"
-let listener = new_tcp_listener(address)
-let id : u8 = 0
-while (true) {
-	let stream = receive_incoming(listener)
-	printf("received connection\n")
-	id += 1
-	thread_spawn(&id, &read, stream)
+fn div(one: i4, two: i4) -> Result {
+	if two == 0 {
+		return Result.Err("Cannot divide by zero")
+	}
+	return Result.Ok(one / two)
 }
+
+let result = div(4, 2)
+result.print()

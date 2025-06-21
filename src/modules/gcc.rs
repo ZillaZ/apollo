@@ -2,6 +2,7 @@ use gccjit::{
     BinaryOp, Block, ComparisonOp, Context, LValue, Parameter, RValue, ToLValue, ToRValue, Type,
     Typeable, UnaryOp,
 };
+use uuid::Uuid;
 use std::borrow::BorrowMut;
 use std::cell::RefCell;
 use std::collections::vec_deque::IterMut;
@@ -11,8 +12,7 @@ use std::rc::Rc;
 use super::memory::Memory;
 use super::parser::Ast;
 use super::structs::{
-    self, AssignVar, Constructor, DataType, FieldAccessName, ForLoop, Impl, Name, Overloaded,
-    OverloadedOp, RangeValue, RefOp, StructDecl, Value, ValueEnum,
+    self, AssignVar, Constructor, DataType, Enum, EnumValue, FieldAccessName, ForLoop, Impl, Name, Overloaded, OverloadedOp, RangeValue, RefOp, StructDecl, Value, ValueEnum
 };
 use super::structs::{Expr, FunctionKind, LibLink, WhileLoop};
 use crate::modules::structs::{Otherwise, RangeType};
@@ -22,7 +22,7 @@ pub enum GccValues<'a> {
     L(LValue<'a>),
     R(RValue<'a>),
     Type(Type<'a>),
-    Pair((Rc<RefCell<GccValues<'a>>>, Rc<RefCell<GccValues<'a>>>)),
+    Range(RValue<'a>),
     Nil,
 }
 
@@ -30,7 +30,7 @@ impl<'a> GccValues<'a> {
     pub fn rvalue(&self) -> RValue<'a> {
         match self {
             GccValues::L(lvalue) => lvalue.to_rvalue(),
-            GccValues::R(rvalue) => *rvalue,
+            GccValues::R(rvalue) | GccValues::Range(rvalue) => *rvalue,
             _ => unreachable!(),
         }
     }
@@ -199,10 +199,19 @@ impl<'a> GccContext<'a> {
         memory.datatypes.insert("Any".into(), void_ptr_type);
     }
 
+    fn gen_custom_types(&'a self, memory: &mut Memory<'a>) {
+        let range_type = memory.datatypes.get("i4").unwrap();
+        let start = self.context.new_field(None, *range_type, "start");
+        let end = self.context.new_field(None, *range_type, "end");
+        let range = self.context.new_struct_type(None, "ApolloRange", &[start, end]);
+        memory.datatypes.insert("range".into(), range.as_type());
+    }
+
     fn gen_primitive_types(&'a self, memory: &mut Memory<'a>) {
         self.gen_numeric_types(memory);
         self.gen_text_types(memory);
         self.gen_void_type(memory);
+        self.gen_custom_types(memory);
     }
 
     fn uuid(&'a self) -> String {
@@ -252,9 +261,36 @@ impl<'a> GccContext<'a> {
                 Expr::Impl(ref mut implementation) => {
                     self.parse_impl(implementation, block, ast, reference)
                 }
+                Expr::Enum(ref mut ast_enum) => {
+                    self.parse_enum(ast_enum, block, reference, ast);
+                }
                 _ => continue,
             }
         }
+    }
+
+    fn parse_enum(&'a self, ast_enum: &mut Enum, block: &mut Block<'a>, memory: &mut Memory<'a>, ast: &mut Ast) {
+        let kind_type = *memory.datatypes.get("u1").unwrap();
+        let kind_field = self.context.new_field(None, kind_type, "kind");
+        let mut field_index = 1;
+        let mut fields = vec![];
+        let mut map = HashMap::new();
+        for variant in ast_enum.variants.iter_mut() {
+            let mut field_value = None;
+            if let Some(ref mut dt) = variant.r#type {
+                let field_type = self.parse_datatype(dt, memory);
+                let field = self.context.new_field(None, field_type, variant.name.as_str());
+                field_value = Some(field);
+                fields.push(field);
+            }
+            map.insert(variant.name.clone(), (field_index, field_value));
+            field_index += 1;
+        }
+        let enum_type = self.context.new_union_type(None, format!(".{}", ast_enum.name.clone()), &fields);
+        let union_field = self.context.new_field(None, enum_type, ".variants");
+        let dt = self.context.new_struct_type(None, ast_enum.name.clone(), &[kind_field, union_field]);
+        memory.enum_variants.insert(dt.as_type(), map);
+        memory.datatypes.insert(ast_enum.name.clone(), dt.as_type());
     }
 
     fn parse_impl(
@@ -317,35 +353,52 @@ impl<'a> GccContext<'a> {
     ) {
         let function = block.get_function();
         let mut value = self.parse_value(&mut fl.range, block, memory, ast);
+        let range_type = *memory.datatypes.get("range").unwrap();
         let datatype = match value {
-            GccValues::Pair((ref mut left, _)) => {
-                let left = self.get_rc_value(left).unwrap();
-                left.rvalue().get_type()
+            GccValues::Range(range) => {
+                let left_field = range_type.is_struct().unwrap().get_field(0);
+                let left = range.access_field(None, left_field);
+                left.to_rvalue().get_type()
             }
             GccValues::L(val) => {
-                let impls = memory
-                    .impls
-                    .get(&val.to_rvalue().get_type())
-                    .expect(&format!(
-                        "Could not find implementation of iter for {:?}",
-                        val
-                    ));
-                impls
-                    .iter()
-                    .find(|(x, _)| x == "peek")
-                    .unwrap()
-                    .1
-                    .get_return_type()
+                if val.to_rvalue().get_type() != range_type {
+                    let impls = memory
+                        .impls
+                        .get(&val.to_rvalue().get_type())
+                        .expect(&format!(
+                            "Could not find implementation of iter for {:?}",
+                            val
+                        ));
+                    impls
+                        .iter()
+                        .find(|(x, _)| x == "peek")
+                        .unwrap()
+                        .1
+                        .get_return_type()
+                }else{
+                    let field = range_type.is_struct().unwrap().get_field(0);
+                    let left = val.access_field(None, field);
+                    left.to_rvalue().get_type()
+                }
             }
             GccValues::R(val) => val.get_type(),
             _ => todo!(),
         };
+        let struct_type = *memory.datatypes.get("range").unwrap();
+        let struct_dt = struct_type.is_struct().unwrap();
+        if let GccValues::L(_) = value {
+            if value.rvalue().get_type() == struct_type {
+                value = GccValues::Range(value.rvalue());
+            }
+        }
         match value {
-            GccValues::R(_) => {
+            GccValues::R(_) | GccValues::Range(_) => {
                 let (start, end) = match value {
-                    GccValues::Pair((ref mut left, ref mut right)) => {
-                        let left = self.get_rc_value(left).unwrap();
-                        let right = self.get_rc_value(right).unwrap();
+                    GccValues::Range(range) => {
+                        let left_field = struct_dt.get_field(0);
+                        let right_field = struct_dt.get_field(1);
+                        let left = range.access_field(None, left_field);
+                        let right = range.access_field(None, right_field);
                         (left, right)
                     }
                     _ => unreachable!("{:?}", fl.range),
@@ -356,14 +409,14 @@ impl<'a> GccContext<'a> {
                     .get_mut(&memory.function_scope)
                     .unwrap()
                     .insert(fl.pivot.clone(), pivot);
-                block.add_assignment(None, pivot, start.rvalue());
+                block.add_assignment(None, pivot, start);
                 let condition =
                     self.context
-                        .new_comparison(None, ComparisonOp::Equals, pivot, end.rvalue());
+                        .new_comparison(None, ComparisonOp::Equals, pivot, end);
                 let mut loop_block = function.new_block(self.uuid());
                 memory.blocks.insert(loop_block, false);
-                let index = function.new_local(None, start.rvalue().get_type(), self.uuid());
-                block.add_assignment(None, index, start.rvalue());
+                let index = function.new_local(None, start.to_rvalue().get_type(), self.uuid());
+                block.add_assignment(None, index, start.to_rvalue());
                 let continue_block = function.new_block(self.uuid());
                 let condition_block = function.new_block(self.uuid());
                 condition_block.end_with_conditional(None, condition, continue_block, loop_block);
@@ -381,50 +434,53 @@ impl<'a> GccContext<'a> {
                 *block = continue_block;
             }
             GccValues::L(value) => {
-                let impls = memory.impls.get(&value.to_rvalue().get_type()).unwrap();
-                let peek = impls.iter().find(|(x, _)| x == "peek").unwrap();
-                let end = impls.iter().find(|(x, _)| x == "ended").unwrap();
-                let start = self
-                    .context
-                    .new_call(None, peek.1, &[value.get_address(None)]);
-                let end = self
-                    .context
-                    .new_call(None, end.1, &[value.get_address(None)]);
-                let dt = *memory.datatypes.get("bool").unwrap();
-                let mut condition = self.context.new_comparison(
-                    None,
-                    ComparisonOp::Equals,
-                    end,
-                    self.context.new_rvalue_from_int(dt, 1),
-                );
-                if !condition.get_type().is_compatible_with(dt) {
-                    condition = self.context.new_cast(None, condition, dt);
+                let struct_type = *memory.datatypes.get("range").unwrap();
+                if value.to_rvalue().get_type() != struct_type {
+                    let impls = memory.impls.get(&value.to_rvalue().get_type()).unwrap();
+                    let peek = impls.iter().find(|(x, _)| x == "peek").unwrap();
+                    let end = impls.iter().find(|(x, _)| x == "ended").unwrap();
+                    let start = self
+                        .context
+                        .new_call(None, peek.1, &[value.get_address(None)]);
+                    let end = self
+                        .context
+                        .new_call(None, end.1, &[value.get_address(None)]);
+                    let dt = *memory.datatypes.get("bool").unwrap();
+                    let mut condition = self.context.new_comparison(
+                        None,
+                        ComparisonOp::Equals,
+                        end,
+                        self.context.new_rvalue_from_int(dt, 1),
+                    );
+                    if !condition.get_type().is_compatible_with(dt) {
+                        condition = self.context.new_cast(None, condition, dt);
+                    }
+                    let mut loop_block = function.new_block(self.uuid());
+                    memory.blocks.insert(loop_block, false);
+                    let pivot = function.new_local(None, start.get_type(), self.uuid());
+                    block.add_assignment(None, pivot, start);
+                    memory
+                        .variables
+                        .get_mut(&memory.function_scope)
+                        .unwrap()
+                        .insert(fl.pivot.clone(), pivot);
+                    let continue_block = function.new_block(self.uuid());
+                    let condition_block = function.new_block(self.uuid());
+                    condition_block.end_with_conditional(None, condition, continue_block, loop_block);
+                    let next = impls.iter().find(|(x, _)| x == "next").unwrap();
+                    let next = self
+                        .context
+                        .new_call(None, next.1, &[value.get_address(None)]);
+                    loop_block.add_assignment(None, pivot, next);
+                    memory.blocks.insert(condition_block, true);
+                    block.end_with_jump(None, condition_block);
+                    self.parse_block(&mut fl.block, &mut loop_block, memory, ast);
+                    memory.blocks.insert(loop_block, true);
+                    loop_block.end_with_jump(None, condition_block);
+                    *block = continue_block
                 }
-                let mut loop_block = function.new_block(self.uuid());
-                memory.blocks.insert(loop_block, false);
-                let pivot = function.new_local(None, start.get_type(), self.uuid());
-                block.add_assignment(None, pivot, start);
-                memory
-                    .variables
-                    .get_mut(&memory.function_scope)
-                    .unwrap()
-                    .insert(fl.pivot.clone(), pivot);
-                let continue_block = function.new_block(self.uuid());
-                let condition_block = function.new_block(self.uuid());
-                condition_block.end_with_conditional(None, condition, continue_block, loop_block);
-                let next = impls.iter().find(|(x, _)| x == "next").unwrap();
-                let next = self
-                    .context
-                    .new_call(None, next.1, &[value.get_address(None)]);
-                loop_block.add_assignment(None, pivot, next);
-                memory.blocks.insert(condition_block, true);
-                block.end_with_jump(None, condition_block);
-                self.parse_block(&mut fl.block, &mut loop_block, memory, ast);
-                memory.blocks.insert(loop_block, true);
-                loop_block.end_with_jump(None, condition_block);
-                *block = continue_block
             }
-            _ => todo!(),
+            x => panic!("Found {:?}", x),
         }
         memory.blocks.insert(*block, true);
     }
@@ -495,8 +551,8 @@ impl<'a> GccContext<'a> {
 
     fn compile_program(&'a self, is_debug: bool) {
         self.context.add_driver_option("-march=x86-64-v4");
+        self.context.dump_to_file("apollo.c", false);
         if is_debug {
-            self.context.dump_to_file("apollo.c", false);
         } else {
             self.context
                 .set_optimization_level(gccjit::OptimizationLevel::Aggressive);
@@ -849,9 +905,33 @@ impl<'a> GccContext<'a> {
                 let mut unary_op = self.get_rc_value(unary_operation).unwrap();
                 self.parse_unary_op(&mut unary_op, block, memory, ast)
             }
+            ValueEnum::Enum(ref mut enum_value) => {
+                self.parse_enum_value(enum_value, block, memory, ast)
+            }
             ref val => unreachable!("Found value enum {:?} while parsing value", val),
         };
         rtn
+    }
+
+    fn parse_enum_value(&'a self, enum_value: &mut Rc<RefCell<EnumValue>>, block: &mut Block<'a>, memory: &mut Memory<'a>, ast: &mut Ast) -> GccValues<'_> {
+        let mut enum_value = self.get_rc_value(enum_value).unwrap();
+        let datatype = memory.datatypes.get(&enum_value.datatype).unwrap().clone();
+        let kind_field = datatype.is_struct().unwrap().get_field(0);
+        let variant_field = datatype.is_struct().unwrap().get_field(1);
+        let variants = memory.enum_variants.get(&datatype).unwrap().clone();
+        println!("{:?}", enum_value);
+        let (index, active_field) = variants.get(&enum_value.variant).unwrap();
+        let function = block.get_function();
+        let dummy = function.new_local(None, datatype, ".");
+        let active_variant = dummy.access_field(None, kind_field);
+        block.add_assignment(None, active_variant, self.context.new_rvalue_from_int(*memory.datatypes.get("u1").unwrap(), *index));
+        if let Some(ref mut inner) = enum_value.inner {
+            let value = self.parse_value(inner, block, memory, ast);
+            let variant_field = dummy.access_field(None, variant_field);
+            let active = variant_field.access_field(None, active_field.unwrap());
+            block.add_assignment(None, active, value.rvalue());
+        }
+        GccValues::R(dummy.to_rvalue())
     }
 
     fn parse_range(
@@ -869,9 +949,14 @@ impl<'a> GccContext<'a> {
                 let mut range = self.get_rc_value(range).unwrap();
                 let start = self.parse_value(&mut range.start, block, memory, ast);
                 let end = self.parse_value(&mut range.end, block, memory, ast);
+                let struct_type = *memory.datatypes.get("range").unwrap();
+                let struct_dt = struct_type.is_struct().unwrap();
+                let start_field = struct_dt.get_field(0);
+                let end_field = struct_dt.get_field(1);
                 match range.range_type {
                     RangeType::Exclusive => {
-                        GccValues::Pair((Rc::new(RefCell::new(start)), Rc::new(RefCell::new(end))))
+                        let range = self.context.new_struct_constructor(None, struct_type, Some(&[start_field, end_field]), &[start.rvalue(), end.rvalue()]);
+                        GccValues::Range(range)
                     }
                     RangeType::Inclusive => {
                         let end = self.context.new_binary_op(
@@ -881,10 +966,8 @@ impl<'a> GccContext<'a> {
                             end.rvalue(),
                             self.context.new_rvalue_from_int(end.rvalue().get_type(), 1),
                         );
-                        GccValues::Pair((
-                            Rc::new(RefCell::new(start)),
-                            Rc::new(RefCell::new(GccValues::R(end))),
-                        ))
+                        let range = self.context.new_struct_constructor(None, struct_type, Some(&[start_field, end_field]), &[start.rvalue(), end]);
+                        GccValues::Range(range)
                     }
                 }
             }
@@ -1255,67 +1338,72 @@ impl<'a> GccContext<'a> {
         memory: &mut Memory<'a>,
         ast: &mut Ast,
     ) -> Block<'_> {
-        let mut condition = self.get_rc_value(&mut ast_if.condition).unwrap();
-        let mut condition = self
-            .parse_value(&mut condition, block, memory, ast)
-            .rvalue();
-        if ast_if.not {
-            condition = self.context.new_unary_op(
-                None,
-                UnaryOp::LogicalNegate,
-                condition.get_type(),
-                condition,
-            );
-        }
+        let mut tb_declared = None;
+        let mut condition = if let Some(ref mut ast_condition) = ast_if.condition {
+            let mut condition = self.get_rc_value(ast_condition).unwrap();
+            let mut condition = self
+                .parse_value(&mut condition, block, memory, ast)
+                .rvalue();
+            if ast_if.not {
+                condition = self.context.new_unary_op(
+                    None,
+                    UnaryOp::LogicalNegate,
+                    condition.get_type(),
+                    condition,
+                );
+            }
+            condition
+        }else{
+            let enum_match = ast_if.enum_match.as_ref().unwrap();
+            let vars = memory.variables.get(&memory.function_scope).unwrap();
+            let var = vars.get(&enum_match.name).unwrap();
+            let enum_type = var.to_rvalue().get_type().is_struct().unwrap();
+            let variants = memory.enum_variants.get(&enum_type.as_type()).unwrap();
+            let (index, _field) = variants.get(&enum_match.variant).unwrap();
+            let kind_field = enum_type.get_field(0);
+            let variant_field = enum_type.get_field(1);
+            let active_field = var.access_field(None, kind_field);
+            let matching = self.context.new_rvalue_from_int(active_field.to_rvalue().get_type(), *index);
+            tb_declared = Some((enum_match.var.clone(), var.access_field(None, variant_field)));
+            self.context.new_comparison(None, ComparisonOp::Equals, active_field, matching)
+        };
         let function = block.get_function();
-        let condition_block = function.new_block(self.uuid());
         let mut then_block = function.new_block(self.uuid());
         let mut ast_block = self.get_rc_value(&mut ast_if.block).unwrap();
+        if let Some((ref name, value)) = tb_declared {
+            let local = function.new_local(None, value.to_rvalue().get_type(), name);
+            let vars = memory.variables.get_mut(&memory.function_scope).unwrap();
+            vars.insert(name.clone(), local);
+            then_block.add_assignment(None, local, value.to_rvalue());
+        }
         self.parse_block(&mut ast_block, &mut then_block, memory, ast);
-        block.end_with_jump(None, condition_block);
         let mut else_should_continue = false;
-        let mut else_exists = false;
         let mut else_block = function.new_block(self.uuid());
+        block.end_with_conditional(None, condition, then_block, else_block);
         if let Some(ref mut otherwise) = ast_if.otherwise {
-            else_exists = true;
             let mut otherwise = self.get_rc_value(otherwise).unwrap();
             match otherwise {
                 Otherwise::Block(ref mut block) => {
                     else_should_continue = block.box_return.is_none();
                     self.parse_block(block, &mut else_block, memory, ast);
                 }
-                _ => unreachable!(),
+                Otherwise::If(ref mut ast_if) => {
+                    let block = self.get_rc_value(&mut ast_if.block).unwrap();
+                    else_should_continue = block.box_return.is_none() && ast_if.otherwise.is_some();
+                    else_block = self.parse_if(ast_if, &mut else_block, memory, ast);
+                }
             }
         };
-        if condition
-            .get_type()
-            .is_compatible_with(*memory.datatypes.get("bool").unwrap())
-        {
-            condition = self.new_cast(
-                *memory.datatypes.get("bool").unwrap(),
-                &mut GccValues::R(condition),
-                memory,
-            );
-        }
-        condition_block.end_with_conditional(None, condition, then_block, else_block);
         let ast_block = self.get_rc_value(&mut ast_if.block).unwrap();
-        if ast_block.box_return.is_none() || else_should_continue {
-            let continue_block = if let Some((b, c)) = memory.last_block {
-                if b == *block {
-                    c
-                } else {
-                    function.new_block(self.uuid())
-                }
-            } else {
-                function.new_block(self.uuid())
-            };
-            if ast_block.box_return.is_none() {
-                then_block.end_with_jump(None, continue_block);
-            }
-            if !else_exists || else_should_continue {
-                else_block.end_with_jump(None, continue_block);
-            }
-            return continue_block;
+        let else_block = if else_should_continue {
+            let new = function.new_block(self.uuid());
+            else_block.end_with_jump(None, new);
+            new
+        }else{
+            else_block
+        };
+        if ast_block.box_return.is_none() {
+            then_block.end_with_jump(None, else_block);
         }
         else_block
     }

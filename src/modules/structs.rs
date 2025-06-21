@@ -207,6 +207,13 @@ pub struct Constructor {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct EnumValue {
+    pub datatype: String,
+    pub variant: String,
+    pub inner: Option<Value>
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum ValueEnum {
     Casting((Rc<RefCell<Value>>, Type)),
     BinaryOp(Rc<RefCell<BinaryOp>>),
@@ -226,6 +233,7 @@ pub enum ValueEnum {
     Constructor(Rc<RefCell<Constructor>>),
     FieldAccess(Rc<RefCell<FieldAccess>>),
     Range(RangeValue),
+    Enum(Rc<RefCell<EnumValue>>),
     None,
 }
 
@@ -345,9 +353,17 @@ pub enum Otherwise {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct EnumMatch {
+    pub name: String,
+    pub variant: String,
+    pub var: String
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct If {
     pub not: bool,
-    pub condition: Rc<RefCell<Value>>,
+    pub condition: Option<Rc<RefCell<Value>>>,
+    pub enum_match: Option<EnumMatch>,
     pub block: Rc<RefCell<Block>>,
     pub otherwise: Option<Rc<RefCell<Otherwise>>>,
 }
@@ -424,6 +440,18 @@ pub enum RangeType {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct EnumVariant {
+    pub name: String,
+    pub r#type: Option<Type>
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Enum {
+    pub name: String,
+    pub variants: Vec<EnumVariant>
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum Expr {
     Return(Return),
     Call(Call),
@@ -441,6 +469,7 @@ pub enum Expr {
     While(WhileLoop),
     For(ForLoop),
     Impl(Impl),
+    Enum(Enum)
 }
 
 impl Expr {

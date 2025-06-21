@@ -133,6 +133,7 @@ impl NoirParser {
                 }
                 Rule::r#for => Expr::For(self.build_for_loop(&mut pair.into_inner(), context)),
                 Rule::r#impl => Expr::Impl(self.build_impl(&mut pair.into_inner(), context)),
+                Rule::r#enum => Expr::Enum(self.build_enum(&mut pair.into_inner(), context)),
                 Rule::EOI => continue,
                 rule => unreachable!("{:?}", rule),
             };
@@ -148,6 +149,34 @@ impl NoirParser {
             })
         });
         expressions
+    }
+
+    fn build_enum(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Enum {
+        let mut name = String::new();
+        let mut variants = vec![];
+        for pair in pairs {
+            match pair.as_rule() {
+                Rule::struct_type => name = pair.as_str().to_string(),
+                Rule::enum_variant => variants.push(self.build_enum_variant(&mut pair.into_inner(), context)),
+                _ => unreachable!()
+            }
+        }
+        Enum {
+            name, variants
+        }
+    }
+
+    fn build_enum_variant(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> EnumVariant {
+        let mut name = String::new();
+        let mut r#type =  None;
+        for pair in pairs {
+            match pair.as_rule() {
+                Rule::struct_type => name = pair.as_str().into(),
+                Rule::datatype => r#type = Some(self.build_datatype(&mut pair.into_inner(), context)),
+                _ => unreachable!()
+            }
+        }
+        EnumVariant { name, r#type }
     }
 
     fn build_impl(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Impl {
@@ -542,6 +571,22 @@ impl NoirParser {
                     value.value =
                         ValueEnum::Range(self.build_range(&mut eval.into_inner(), context))
                 }
+                Rule::enum_build => {
+                    let mut datatype = String::new();
+                    let mut variant = String::new();
+                    let mut inner = None;
+                    let mut switch = false;
+                    for rule in eval.into_inner() {
+                        match rule.as_rule() {
+                            Rule::struct_type => if !switch { switch = true; datatype = rule.as_str().into(); } else { variant = rule.as_str().into(); },
+                            Rule::bvalue => inner = Some(self.build_bvalue(&mut rule.into_inner(), context)),
+                            Rule::value => inner = Some(self.build_value(&mut rule.into_inner(), context)),
+                            Rule::binary_operation => inner = Some(self.build_binary_op(&mut rule.into_inner(), context)),
+                            rule => unreachable!("Found rule {:?}", rule)
+                        }
+                    }
+                    value.value = ValueEnum::Enum(Rc::new(RefCell::new(EnumValue { datatype, variant, inner })))
+                }
                 rule => unreachable!("Fucked up rule is {:?}", rule),
             };
         }
@@ -610,11 +655,11 @@ impl NoirParser {
             let mut changed = false;
             for pair in pairs {
                 match pair.as_rule() {
-                    Rule::binary_op => {
+                    Rule::bvalue => {
                         if changed {
-                            end = self.build_binary_op(&mut pair.into_inner(), context);
+                            end = self.build_bvalue(&mut pair.into_inner(), context);
                         } else {
-                            start = self.build_binary_op(&mut pair.into_inner(), context);
+                            start = self.build_bvalue(&mut pair.into_inner(), context);
                             changed = true;
                         }
                     }
@@ -802,7 +847,8 @@ impl NoirParser {
     fn build_if(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> If {
         let mut value = If {
             not: false,
-            condition: Rc::new(RefCell::new(Value::default())),
+            condition: None,
+            enum_match: None,
             block: Rc::new(RefCell::new(Block {
                 expr: Vec::new(),
                 box_return: None,
@@ -813,19 +859,19 @@ impl NoirParser {
             match pair.as_rule() {
                 Rule::not => value.not = true,
                 Rule::binary_operation => {
-                    value.condition = Rc::new(RefCell::new(
+                    value.condition = Some(Rc::new(RefCell::new(
                         self.build_binary_op(&mut pair.into_inner(), context),
-                    ))
+                    )))
                 }
                 Rule::bvalue => {
-                    value.condition = Rc::new(RefCell::new(
+                    value.condition = Some(Rc::new(RefCell::new(
                         self.build_bvalue(&mut pair.into_inner(), context),
-                    ))
+                    )))
                 }
                 Rule::base_value => {
-                    value.condition = Rc::new(RefCell::new(
+                    value.condition = Some(Rc::new(RefCell::new(
                         self.build_base(&mut pair.into_inner(), context),
-                    ))
+                    )))
                 }
                 Rule::block => {
                     value.block = Rc::new(RefCell::new(
@@ -836,6 +882,20 @@ impl NoirParser {
                     value.otherwise = Some(Rc::new(RefCell::new(
                         self.build_otherwise(&mut pair.into_inner(), context),
                     )))
+                }
+                Rule::enum_match => {
+                    let mut name = String::new();
+                    let mut variant = String::new();
+                    let mut var = String::new();
+                    let mut switch = false;
+                    for eval in pair.into_inner() {
+                        match eval.as_rule() {
+                            Rule::name_str => if !switch { switch = true; name = eval.as_str().into(); } else { var = eval.as_str().into(); },
+                            Rule::struct_type => variant = eval.as_str().into(),
+                            _ => unreachable!()
+                        }
+                    }
+                    value.enum_match = Some(EnumMatch { name, variant, var })
                 }
                 rule => unreachable!("Found rule {:?} while building if", rule),
             };
@@ -1036,6 +1096,7 @@ impl NoirParser {
             if escaping {
                 match c {
                     'n' => repr = "\n".to_string(),
+                    'r' => repr = "\r".to_string(),
                     _ => (),
                 };
                 escaping = false;
@@ -1151,7 +1212,7 @@ impl NoirParser {
                 }
                 Rule::struct_type => {
                     datatype = DataType::StructType(
-                        self.build_struct_type(&mut pair.into_inner(), context),
+                        self.build_struct_type(&pair, context),
                     )
                 }
                 Rule::string_type => datatype = DataType::String,
@@ -1173,9 +1234,8 @@ impl NoirParser {
         }
     }
 
-    fn build_struct_type(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> String {
-        let eval = pairs.peek().unwrap();
-        eval.as_str().into()
+    fn build_struct_type(&self, pair: &Pair<Rule>, context: &mut AstContext) -> String {
+        pair.as_str().into()
     }
 
     fn build_int_type(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> DataType {

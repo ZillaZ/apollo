@@ -30,9 +30,6 @@ fn main() {
     };
     let mut imports = HashSet::new();
     gcc.gen_bytecode(&mut ast, &mut imports, &mut memory, true, should_debug);
-    if args[1] == "run" {
-        std::process::Command::new("./apollo").output().unwrap();
-    }
 }
 
 fn read_file(path: &str) -> String {

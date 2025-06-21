@@ -27,6 +27,7 @@ pub struct Memory<'a> {
     pub function_addresses: HashMap<String, RValue<'a>>,
     pub pointer_types: HashSet<Type<'a>>,
     pub imports: HashSet<String>,
+    pub enum_variants: HashMap<Type<'a>, HashMap<String, (i32, Option<Field<'a>>)>>
 }
 
 impl<'a> Memory<'a> {
@@ -56,6 +57,7 @@ impl<'a> Memory<'a> {
         let function_addresses = HashMap::new();
         let pointer_types = HashSet::new();
         let imports = HashSet::new();
+        let enum_variants = HashMap::new();
         Self {
             name,
             last_block,
@@ -80,6 +82,7 @@ impl<'a> Memory<'a> {
             field_types,
             pointer_types,
             imports,
+            enum_variants
         }
     }
     pub fn unconst_type(&self, r#type: Type<'a>) -> Type<'a> {
