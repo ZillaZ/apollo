@@ -1,0 +1,70 @@
+link with "raylib"
+
+struct Color {
+    r: i1
+    g: i1
+    b: i1
+    a: i1
+}
+
+struct Vector2 {
+    x: f4
+    y: f4
+}
+
+struct Rectangle {
+    x: f4
+    y: f4
+    width: f4
+    height: f4
+}
+
+extern fn InitWindow(width: i4, height: i4, title: string) {}
+extern fn WindowShouldClose() -> bool {}
+extern fn BeginDrawing() {}
+extern fn EndDrawing() {}
+extern fn ClearBackground(color: Color) {}
+extern fn SetTargetFPS(fps: i4) {}
+extern fn GetFPS() -> i4 {}
+extern fn GetTime() -> f4 {}
+
+extern fn DrawPixel(posX: i4, posY: i4, color: Color) {}
+extern fn DrawPixelV(position: Vector2, color: Color) {}
+extern fn DrawLine(startPosX: i4, startPosY: i4, endPosX: i4, endPosY: i4, color: Color) {}
+extern fn DrawLineV(startPos: Vector2, endPos: Vector2, color: Color) {}
+extern fn DrawCircle(centerX: i4, centerY: i4, radius: f4, color: Color) {}
+extern fn DrawCircleV(center: Vector2, radius: f4, color: Color) {}
+extern fn DrawRectangle(posX: i4, posY: i4, width: i4, height: i4, color: Color) {}
+extern fn DrawRectangleV(position: Vector2, size: Vector2, color: Color) {}
+extern fn DrawRectangleRec(rec: Rectangle, color: Color) {}
+extern fn DrawRectangleLinesEx(rec: Rectangle, lineThick: f4, color: Color) {}
+extern fn DrawFPS(x: i4, y: i4) {}
+
+extern fn DrawText(text: string, posX: i4, posY: i4, fontSize: i4, color: Color) {}
+
+let LIGHTGRAY = new Color { r: 200 g: 200 b: 200 a: 255 }
+let GRAY      = new Color { r: 130 g: 130 b: 130 a: 255 }
+let DARKGRAY  = new Color { r: 80 g: 80 b: 80 a: 255 }
+let YELLOW    = new Color { r: 253 g: 249 b: 0 a: 255 }
+let GOLD      = new Color { r: 255 g: 203 b: 0 a: 255 }
+let ORANGE    = new Color { r: 255 g: 161 b: 0 a: 255 }
+let PINK      = new Color { r: 255 g: 109 b: 194 a: 255 }
+let RED       = new Color { r: 230 g: 41 b: 55 a: 255 }
+let MAROON    = new Color { r: 190 g: 33 b: 55 a: 255 }
+let GREEN     = new Color { r: 0 g: 228 b: 48 a: 255 }
+let LIME      = new Color { r: 0 g: 158 b: 47 a: 255 }
+let DARKGREEN = new Color { r: 0 g: 117 b: 44 a: 255 }
+let SKYBLUE   = new Color { r: 102 g: 191 b: 255 a: 255 }
+let BLUE      = new Color { r: 0 g: 121 b: 241 a: 255 }
+let DARKBLUE  = new Color { r: 0 g: 82 b: 172 a: 255 }
+let PURPLE    = new Color { r: 200 g: 122 b: 255 a: 255 }
+let VIOLET    = new Color { r: 135 g: 60 b: 190 a: 255 }
+let DARKPURPLE= new Color { r: 112 g: 31 b: 126 a: 255 }
+let BEIGE     = new Color { r: 211 g: 176 b: 131 a: 255 }
+let BROWN     = new Color { r: 127 g: 106 b: 79 a: 255 }
+let DARKBROWN = new Color { r: 76 g: 63 b: 47 a: 255 }
+let WHITE     = new Color { r: 255 g: 255 b: 255 a: 255 }
+let BLACK     = new Color { r: 0 g: 0 b: 0 a: 255 }
+let BLANK     = new Color { r: 0 g: 0 b: 0 a: 0 }
+let MAGENTA   = new Color { r: 255 g: 0 b: 255 a: 255 }
+let RAYWHITE  = new Color { r: 245 g: 245 b: 245 a: 255 }

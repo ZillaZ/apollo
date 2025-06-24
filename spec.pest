@@ -2,7 +2,7 @@ WHITESPACE = _{ " " | NEWLINE | "\x09" | "\t" }
 
 index_access        = _{ "[" ~ value ~ "]" }
 import              =  { "use" ~ namespace }
-name_str            = @{ !'A'..'Z' ~ (ASCII_ALPHANUMERIC | "_" | "::" | "/")+ }
+name_str            = @{ (ASCII_ALPHANUMERIC | "_" | "::" | "/")+ }
 generic_id          =  { ASCII_ALPHA }
 program             = _{ SOI ~ expr+ ~ EOI }
 array_type          =  { "array(" ~ datatype ~ value? ~ ")" }
@@ -11,7 +11,7 @@ array_access        =  { (call | name) ~ index_access }
 string              = @{ "\"" ~ char* ~ "\"" }
 char                = _{
     !("\"" | "\\") ~ ANY
-  | "\\" ~ ("\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t")
+  | "\\" ~ ("\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t" | "0")
   | "\\" ~ ("u" ~ ASCII_HEX_DIGIT{4})
 }
 char_value          = @{ "'" ~ char ~ "'" }
@@ -39,19 +39,19 @@ neq                 =  { "not eq" | "!=" }
 and                 =  { "and" | "&&" }
 or                  =  { "or" | "||" }
 struct              =  { "struct" ~ name_str ~ "{" ~ (trait_field | field_decl)* ~ "}" }
-enum = { "enum" ~ struct_type ~ "{" ~ enum_variant+ ~ "}" }
-enum_variant = { struct_type ~ ("(" ~ datatype ~ ")")? }
-enum_build = { struct_type ~ "." ~ struct_type ~ ("(" ~ value ~ ")")? }
-enum_match = { name_str ~ "." ~ struct_type ~ ("(" ~ name_str ~ ")")? }
+enum                =  { "enum" ~ struct_type ~ "{" ~ enum_variant+ ~ "}" }
+enum_variant        =  { struct_type ~ ("(" ~ datatype ~ ")")? }
+enum_build          =  { struct_type ~ "." ~ struct_type ~ ("(" ~ value ~ ")")? }
+enum_match          =  { name_str ~ "." ~ struct_type ~ ("(" ~ name_str ~ ")")? }
 field_decl          =  { name_str ~ dd ~ datatype }
-base_value          = { constructor | array | "(" ~ range ~ ")" | bool | enum_build | field_access | array_access | call | char_value | float | integer | name | string | "(" ~ value ~ ")" }
-bvalue              =  { base_value  ~ type_casting? }
-unary_op            =  _{ unary_minus | not }
+base_value          =  { constructor | array | "(" ~ range ~ ")" | bool | enum_build | field_access | array_access | call | char_value | float | integer | name | string | "(" ~ value ~ ")" }
+bvalue              =  { base_value ~ type_casting? }
+unary_op            = _{ unary_minus | not }
 unary_operation     =  { unary_op ~ bvalue }
 binary_operation    =  { bvalue ~ (binary_op ~ bvalue)+ }
 value               = _{ binary_operation | unary_operation | bvalue }
 overloaded_ops      =  { add_to | sub_to | mul_to | div_to }
-expr                = _{ (for | while | lib_link | trait | enum | struct | import | impl | overloaded_op | return | function | call | block | declaration | assignment | if | field_access) }
+expr                = _{ (assembly | for | while | lib_link | trait | enum | struct | import | impl | overloaded_op | return | function | call | block | declaration | assignment | if | field_access) }
 declaration         =  { let ~ name ~ (dd ~ datatype)? ~ (eq ~ value)? }
 assignment          =  { (array_access | field_access | name) ~ eq ~ value }
 call                =  { name ~ "(" ~ (arg ~ (v ~ arg)*)? ~ ")" }
@@ -67,12 +67,17 @@ v                   = _{ "," }
 parameter           =  { name ~ dd ~ datatype }
 datatype            =  { ref* ~ (any_type | trait_type | array_type | float_type | int_type | string_type | char_type | bool_type | struct_type) }
 bool_type           =  { "bool" }
-struct_type         =  @{ 'A'..'Z' ~ (ASCII_ALPHANUMERIC | "_")* }
+struct_type         = @{ 'A'..'Z' ~ (ASCII_ALPHANUMERIC | "_")* }
 int_type            =  { unsigned? ~ "i" ~ integer }
 char_type           =  { "char" }
 float_type          =  { "f" ~ integer }
 string_type         =  { "string" ~ !"s::" }
 string_value        =  { "\"" ~ string ~ "\"" }
+asm_arg = { "(" ~ string ~ value ~ name? ~ ")" }
+asm_in = { ":in" ~ "{" ~ asm_arg+ ~ "}" }
+asm_out = { ":out" ~ "{" ~ asm_arg+ ~ "}" }
+asm_clob = { ":clob" ~ "{" ~ string+ ~ "}" }
+assembly            =  { "#asm" ~ "{" ~ string ~ asm_in? ~ asm_out? ~ asm_clob? ~ "}" }
 unsigned            =  { "u" }
 fn                  = _{ "fn" }
 let                 = _{ "let" }

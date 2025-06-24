@@ -1,4 +1,4 @@
-;;; package --- apollo-mode
+;; package --- apollo-mode
 ;;; Commentary:
 ;;; Nothing here
 ;;; Code:
@@ -19,7 +19,7 @@
 (setq apollo-imported "::{\\([[:space:]]*\\(\\w\\|_\\)+\/\\(\\w\\|_\\)+[[:space:]]*\\)+}\\|\\(?:::\\)\\(\\w\\|_\\)+\n")
 
 (defvar apollo-keywords nil "Apollo keywords.")
-(setq apollo-keywords '("impl" "as" "extern" "new" "link" "with" "fn" "if" "else" "return" "trait" "struct" "use" "let"))
+(setq apollo-keywords '("impl" "as" "extern" "new" "link" "with" "fn" "if" "else" "return" "trait" "struct" "use" "let" "enum"))
 
 (defvar apollo-types nil "Apollo types.")
 (setq apollo-types '("f1" "f2" "f4" "f8" "i1" "i2" "i4" "i8" "u1" "u2" "u4" "u8" "u16" "char" "string" "array" "bool"))

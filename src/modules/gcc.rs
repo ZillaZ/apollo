@@ -264,8 +264,32 @@ impl<'a> GccContext<'a> {
                 Expr::Enum(ref mut ast_enum) => {
                     self.parse_enum(ast_enum, block, reference, ast);
                 }
+                Expr::Assembly(ref asm) => self.parse_asm(asm, block, reference, ast),
                 _ => continue,
             }
+        }
+    }
+
+    fn parse_asm(&'a self, asm: &structs::Assembly, block: &mut Block<'a>, memory: &mut Memory<'a>, ast: &mut Ast) {
+        let extended = block.add_extended_asm(None, &asm.asm);
+        for arg in asm.input.iter() {
+            let name = if let Some(ref name) = arg.name {
+                Some(name.as_str())
+            }else{
+                None
+            };
+            extended.add_input_operand(name, &arg.constraint, self.parse_value(&mut Value::non_heap(arg.value.clone()), block, memory, ast).rvalue());
+        }
+        for arg in asm.output.iter() {
+               let name = if let Some(ref name) = arg.name {
+                Some(name.as_str())
+            }else{
+                None
+            };
+            extended.add_output_operand(name, &arg.constraint, self.parse_value(&mut Value::non_heap(arg.value.clone()), block, memory, ast).dereference());
+        }
+        for clob in asm.clobbered.iter() {
+            extended.add_clobber(clob.as_str());
         }
     }
 
@@ -549,21 +573,21 @@ impl<'a> GccContext<'a> {
         function.new_block("initial")
     }
 
-    fn compile_program(&'a self, is_debug: bool) {
+    fn compile_program(&'a self, is_debug: bool, out: String) {
         self.context.add_driver_option("-march=x86-64-v4");
-        self.context.dump_to_file("apollo.c", false);
+        self.context.dump_to_file(format!("{out}.c"), false);
         if is_debug {
         } else {
             self.context
                 .set_optimization_level(gccjit::OptimizationLevel::Aggressive);
         }
-        self.context.set_program_name("apollo");
+        self.context.set_program_name(out.clone());
         self.context
-            .compile_to_file(gccjit::OutputKind::Executable, "apollo");
+            .compile_to_file(gccjit::OutputKind::Executable, out.clone());
         self.context
-            .compile_to_file(gccjit::OutputKind::DynamicLibrary, "apollo.so");
+            .compile_to_file(gccjit::OutputKind::DynamicLibrary, format!("{out}.so"));
         self.context
-            .compile_to_file(gccjit::OutputKind::Assembler, "apollo.s");
+            .compile_to_file(gccjit::OutputKind::Assembler, format!("{out}.s"));
     }
 
     pub fn gen_bytecode(
@@ -573,6 +597,7 @@ impl<'a> GccContext<'a> {
         memory: &mut Memory<'a>,
         should_compile: bool,
         is_debug: bool,
+        out: String
     ) {
         let mut block = self.setup_entry_point(imports, ast, memory);
         self.parse_expression(ast, memory, &mut block);
@@ -582,7 +607,7 @@ impl<'a> GccContext<'a> {
                 .new_rvalue_from_int(<i32 as Typeable>::get_type(&self.context), 0),
         );
         if should_compile {
-            self.compile_program(is_debug);
+            self.compile_program(is_debug, out);
         }
     }
 
@@ -667,7 +692,7 @@ impl<'a> GccContext<'a> {
             }
             all_imports.insert(import.name.clone());
             let imported_ast = Rc::get_mut(ast).unwrap();
-            self.gen_bytecode(imported_ast.get_mut(), all_imports, memory, false, false);
+            self.gen_bytecode(imported_ast.get_mut(), all_imports, memory, false, false, "".into());
             //self.push_to_module(&import, memory, &mut new_memory);
         }
     }

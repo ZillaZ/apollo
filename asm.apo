@@ -1,0 +1,12 @@
+fn add(number: i4, n: i4) -> i4 {
+	let sum = 0
+	#asm { "
+add %%eax, %%ebx
+"
+		:in { ("a" n) ("b" number) }
+		:out { ("=b" sum) }
+	}
+	return sum
+}
+let number = add(10, 2)
+printf("%d\n", number)

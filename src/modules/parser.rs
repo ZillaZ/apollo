@@ -134,6 +134,7 @@ impl NoirParser {
                 Rule::r#for => Expr::For(self.build_for_loop(&mut pair.into_inner(), context)),
                 Rule::r#impl => Expr::Impl(self.build_impl(&mut pair.into_inner(), context)),
                 Rule::r#enum => Expr::Enum(self.build_enum(&mut pair.into_inner(), context)),
+                Rule::assembly => Expr::Assembly(self.build_assembly(&mut pair.into_inner(), context)),
                 Rule::EOI => continue,
                 rule => unreachable!("{:?}", rule),
             };
@@ -149,6 +150,42 @@ impl NoirParser {
             })
         });
         expressions
+    }
+
+    fn build_assembly(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Assembly {
+        let mut string = String::new();
+        let mut input = vec![];
+        let mut output = vec![];
+        let mut clob = vec![];
+        for pair in pairs {
+            match pair.as_rule() {
+                Rule::string => string = pair.as_str()[1..pair.as_str().len()-1].into(),
+                Rule::asm_in => input = self.build_asm_args(&mut pair.into_inner(), context),
+                Rule::asm_out => output = self.build_asm_args(&mut pair.into_inner(), context),
+                Rule::asm_clob => clob = pair.into_inner().map(|x| x.as_str()[1..x.as_str().len()-1].to_string()).collect(),
+                _ => unreachable!()
+            }
+        }
+        Assembly { asm: string, input, output, clobbered: clob }
+    }
+
+    fn build_asm_args(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Vec<AsmArg> {
+        let mut rtn = vec![];
+        for pair in pairs {
+            let mut string = String::new();
+            let mut name = None;
+            let mut val = ValueEnum::Int(0);
+            for mut eval in pair.into_inner() {
+                match eval.as_rule() {
+                    Rule::string => string = eval.as_str()[1..eval.as_str().len()-1].into(),
+                    Rule::bvalue | Rule::base_value | Rule::binary_operation | Rule::unary_operation => val = self.build_single_value(&mut eval, context).value,
+                    Rule::name => name = Some(self.build_name(&mut eval.into_inner(), context).name),
+                    _ => unreachable!()
+                }
+            }
+            rtn.push(AsmArg{ constraint: string, value: val, name })
+        }
+        rtn
     }
 
     fn build_enum(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Enum {
@@ -985,39 +1022,6 @@ impl NoirParser {
         FunctionKind::from_str(pair.as_str())
     }
 
-    fn is_struct_heap_allocated(
-        &self,
-        constructor: &mut Rc<RefCell<Constructor>>,
-        context: &mut AstContext,
-    ) -> bool {
-        for field in Rc::get_mut(constructor).unwrap().get_mut().fields.iter() {
-            if field.value.heap_allocated {
-                return true;
-            }
-        }
-        false
-    }
-
-    fn is_variable_heap_allocated(&self, name: &Name, context: &mut AstContext) -> bool {
-        let binding = context.variables.get_mut(&context.scope).unwrap();
-        if let Some(value) = binding.get(&name.name) {
-            return value.heap_allocated;
-        }
-        false
-    }
-
-    fn is_operation_heap_allocated(
-        &self,
-        operation: &mut Rc<RefCell<Operation>>,
-        context: &mut AstContext,
-    ) -> bool {
-        match Rc::get_mut(operation).unwrap().get_mut() {
-            Operation::UnaryOp(ref mut op) => {
-                Rc::get_mut(&mut op.value).unwrap().get_mut().heap_allocated
-            }
-            _ => false,
-        }
-    }
 
     fn build_block(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Block {
         let mut block = Block {
@@ -1027,19 +1031,8 @@ impl NoirParser {
         let expressions = self.build_expression(pairs, context);
         for expression in expressions {
             match expression {
-                Expr::Return(mut r#return) => {
-                    if let Some(ref mut val) = r#return.value {
-                        match val.value {
-                            ValueEnum::Array(_) | ValueEnum::String(_) => val.heap_allocated = true,
-                            ValueEnum::Constructor(ref mut cons) => {
-                                val.heap_allocated = self.is_struct_heap_allocated(cons, context)
-                            }
-                            ValueEnum::Name(ref name) => {
-                                val.heap_allocated = self.is_variable_heap_allocated(name, context)
-                            }
-                            _ => (),
-                        };
-                    }
+                Expr::Return(r#return) => {
+
                     block.box_return = Some(r#return);
                 }
                 val => block.expr.push(Rc::new(RefCell::new(val))),

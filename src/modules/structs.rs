@@ -252,6 +252,12 @@ impl Default for Value {
     }
 }
 
+impl Value {
+    pub fn non_heap(value: ValueEnum) -> Self {
+        Self { heap_allocated: false, value }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct ArrayType {
     pub size: Value,
@@ -452,6 +458,21 @@ pub struct Enum {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct AsmArg {
+    pub constraint: String,
+    pub value: ValueEnum,
+    pub name: Option<String>
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Assembly {
+    pub asm: String,
+    pub input: Vec<AsmArg>,
+    pub output: Vec<AsmArg>,
+    pub clobbered: Vec<String>
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum Expr {
     Return(Return),
     Call(Call),
@@ -469,7 +490,8 @@ pub enum Expr {
     While(WhileLoop),
     For(ForLoop),
     Impl(Impl),
-    Enum(Enum)
+    Enum(Enum),
+    Assembly(Assembly)
 }
 
 impl Expr {

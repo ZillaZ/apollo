@@ -1,0 +1,50 @@
+enum Result {
+	Ok(i4)
+	Err(string)
+}
+
+struct String {
+data: string
+len: i4
+}
+
+fn div(one: i4, two: i4) -> Result {
+	if two == 0 {
+		return Result.Err("Can't divide by zero")
+	}
+	return Result.Ok(one / two)
+}
+
+fn print(result: Result) {
+	if result.Ok(number) {
+		printf("Result is %d\n", number)
+	}else if result.Err(error) {
+		printf("Error: %s\n", error)
+	}
+	return
+}
+
+extern fn scanf(format: string, value: &char) -> i4 {}
+fn input(message: string) -> String {
+	let value = "abc"
+	printf("%s\n", message)
+	let len = scanf("%s", &value)
+	printf("value is %s\n", value)
+	return new String { data: value len: len }
+}
+
+fn stoi(value: String) -> i4 {
+	let number = 0
+	printf("%s\n", value.data)
+	for i in (0..value.len) {
+		number *= 10
+		number += value.data[i-1] - 30
+	}
+	return number
+}
+
+let one = stoi(input("Insert number one"))
+let two = stoi(input("Inset number two"))
+
+let result = div(one, two)
+result.print()
