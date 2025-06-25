@@ -278,6 +278,7 @@ impl<'a> GccContext<'a> {
             }else{
                 None
             };
+            println!("{:?}", arg);
             extended.add_input_operand(name, &arg.constraint, self.parse_value(&mut Value::non_heap(arg.value.clone()), block, memory, ast).rvalue());
         }
         for arg in asm.output.iter() {

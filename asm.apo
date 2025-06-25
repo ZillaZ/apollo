@@ -1,12 +1,36 @@
-fn add(number: i4, n: i4) -> i4 {
-	let sum = 0
-	#asm { "
-add %%eax, %%ebx
+extern fn realloc(mem: Any, capacity: i8) -> Any {}
+
+fn scan() -> string {
+	let capacity = 128
+	let total_read = 0
+	let mem : &char = malloc(capacity)
+	let flag = true
+	let addr = &mem[total_read]
+	while flag {
+		if total_read >= capacity - 1 {
+			capacity *= 2
+			let aux = realloc(mem, capacity)
+			mem = aux
+		}
+		let bytes_in = 0
+		#asm { "
+xor %%rdi, %%rdi
+mov %1, %%rsi
+mov $1, %%rdx
+xor %%rax, %%rax
+syscall
 "
-		:in { ("a" n) ("b" number) }
-		:out { ("=b" sum) }
+			:in { ("r" addr) }
+			:out { ("=a" bytes_in) }
+			:clob { "rdi" "rsi" "rdx" "rcx" "r11" "memory" }
+		}
+		if bytes_in == 0 or mem[total_read] == '\n' {
+			flag = false
+		}
+		total_read += 1
 	}
-	return sum
+	printf("Input was %s\n", mem)
+	printf("total is %d\n", total)
+	return mem
 }
-let number = add(10, 2)
-printf("%d\n", number)
+scan()
