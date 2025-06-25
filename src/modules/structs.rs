@@ -1,3 +1,7 @@
+use pest::iterators::Pair;
+
+use crate::Rule;
+
 use super::{ast_context::AstContext, parser::Ast};
 use std::{cell::RefCell, rc::Rc};
 
@@ -13,7 +17,6 @@ pub enum Operations {
     Sub,
     Mul,
     Div,
-    Neg,
     Eq,
     Neq,
     Lte,
@@ -24,6 +27,29 @@ pub enum Operations {
     Or,
     Not,
     Modulo,
+}
+
+impl From<Pair<'_, Rule>> for Operations {
+    fn from(value: Pair<Rule>) -> Self {
+        use Operations::*;
+        match value.as_rule() {
+            Rule::add => Add,
+            Rule::sub => Sub,
+            Rule::mul => Mul,
+            Rule::div => Div,
+            Rule::cmp_eq => Eq,
+            Rule::neq => Neq,
+            Rule::lte => Lte,
+            Rule::gte => Gte,
+            Rule::lt => Lt,
+            Rule::gt => Gt,
+            Rule::and => And,
+            Rule::or => Or,
+            Rule::not => Not,
+            Rule::modulo => Modulo,
+            rule => unreachable!("Found rule {:?}", rule)
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]

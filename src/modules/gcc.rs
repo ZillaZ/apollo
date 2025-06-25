@@ -280,6 +280,7 @@ impl<'a> GccContext<'a> {
             };
             println!("{:?}", arg);
             extended.add_input_operand(name, &arg.constraint, self.parse_value(&mut Value::non_heap(arg.value.clone()), block, memory, ast).rvalue());
+
         }
         for arg in asm.output.iter() {
                let name = if let Some(ref name) = arg.name {
@@ -445,12 +446,8 @@ impl<'a> GccContext<'a> {
                 let continue_block = function.new_block(self.uuid());
                 let condition_block = function.new_block(self.uuid());
                 condition_block.end_with_conditional(None, condition, continue_block, loop_block);
-                loop_block.add_assignment_op(
-                    None,
-                    pivot,
-                    BinaryOp::Plus,
-                    memory.units.get(&datatype).unwrap().to_rvalue(),
-                );
+                let tail_expr = Expr::Overloaded(Overloaded { lhs: structs::OverloadedLHS::Name(Name { op: None, op_count: 0, name: fl.pivot.clone()}), op: OverloadedOp::Add, rhs: Value::non_heap(ValueEnum::Int(1)) });
+                memory.block_tail_expr.push(tail_expr);
                 memory.blocks.insert(condition_block, true);
                 block.end_with_jump(None, condition_block);
                 self.parse_block(&mut fl.block, &mut loop_block, memory, ast);
@@ -1163,9 +1160,10 @@ impl<'a> GccContext<'a> {
     }
 
     fn parse_char(&'a self, c: &char, memory: &mut Memory<'a>) -> GccValues<'a> {
+        println!("CHAR IS {c}");
         GccValues::R(self.context.new_rvalue_from_int(
             *memory.datatypes.get("char").unwrap(),
-            *c.to_string().bytes().peekable().peek().unwrap() as i32,
+            c.to_string().as_bytes()[0] as i32,
         ))
     }
 
@@ -1176,13 +1174,30 @@ impl<'a> GccContext<'a> {
         memory: &mut Memory<'a>,
         ast: &mut Ast,
     ) -> GccValues<'a> {
-        let rvalue = self
-            .parse_value(&mut access.value, block, memory, ast)
-            .rvalue();
+        let mut rvalue = self
+            .parse_value(&mut access.value, block, memory, ast);
         let index = self
             .parse_value(&mut access.index, block, memory, ast)
             .rvalue();
-        GccValues::L(self.context.new_array_access(None, rvalue, index))
+        if let ValueEnum::Name(ref name) = access.value.value {
+            for _ in 0..name.op_count {
+                match name.op {
+                    Some(ref op) => {
+                        match op {
+                            RefOp::Reference => rvalue = GccValues::L(rvalue.dereference()),
+                            RefOp::Dereference => rvalue = GccValues::R(rvalue.get_reference())
+                        }
+                    }
+                    None => break
+                }
+            }
+            println!("TYPEOF VALUE TO ACCESS IS {:?}", rvalue.rvalue().get_type());
+            let access = self.context.new_array_access(None, rvalue.rvalue(), index);
+            let access = self.access_name(&access, name);
+            GccValues::R(access.rvalue())
+        }else{
+            GccValues::L(self.context.new_array_access(None, rvalue.rvalue(), index))
+        }
     }
 
     fn parse_array(
@@ -1212,7 +1227,11 @@ impl<'a> GccContext<'a> {
         memory: &mut Memory<'a>,
         ast: &mut Ast,
     ) -> GccValues<'a> {
-        self.parse_expression(&mut ast_block.to_ast(), memory, new_block);
+        let mut aux = ast_block.to_ast();
+        self.parse_expression(&mut aux, memory, new_block);
+        aux.expressions = memory.block_tail_expr.clone();
+        memory.block_tail_expr.clear();
+        self.parse_expression(&mut aux, memory, new_block);
         if let Some(ref mut rtn) = ast_block.box_return {
             self.build_return(rtn, new_block, memory, ast);
             return GccValues::R(
@@ -1730,12 +1749,12 @@ impl<'a> GccContext<'a> {
         block: &mut Block<'a>,
         memory: &mut Memory<'a>,
         ast: &mut Ast,
-    ) -> GccValues<'_> {
+    ) -> GccValues<'a> {
         use structs::Operations;
         let mut value = self.get_rc_value(&mut unary_op.value).unwrap();
         let value = self.parse_value(&mut value, block, memory, ast);
         let op = match unary_op.prefix {
-            Operations::Neg => Some(UnaryOp::Minus),
+            Operations::Sub => Some(UnaryOp::Minus),
             Operations::Not => Some(UnaryOp::LogicalNegate),
             _ => None,
         };

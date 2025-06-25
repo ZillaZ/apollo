@@ -1,3 +1,5 @@
+use std::stdin::stdin
+
 enum Result {
 	Ok(i4)
 	Err(string)
@@ -20,4 +22,6 @@ fn div(one: i4, two: i4) -> Result {
 }
 
 let result = div(4, 2)
+let one = str_to_int(read_line())
+let two = str_to_int(read_line())
 result.print()

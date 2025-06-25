@@ -1,16 +1,15 @@
+use std::stdin::stdin
+
 enum Result {
 	Ok(i4)
 	Err(string)
 }
 
-struct String {
-data: string
-len: i4
-}
-
 fn div(one: i4, two: i4) -> Result {
-	if two == 0 {
+	if one != 0 and two == 0 {
 		return Result.Err("Can't divide by zero")
+	}else if one == 0 and two == 0 {
+		return Result.Ok(1)
 	}
 	return Result.Ok(one / two)
 }
@@ -24,21 +23,17 @@ fn print(result: Result) {
 	return
 }
 
-extern fn scanf(format: string, value: &char) -> i4 {}
 fn input(message: string) -> String {
-	let value = "abc"
 	printf("%s\n", message)
-	let len = scanf("%s", &value)
-	printf("value is %s\n", value)
-	return new String { data: value len: len }
+	let input = read_line()
+	return input
 }
 
 fn stoi(value: String) -> i4 {
 	let number = 0
-	printf("%s\n", value.data)
 	for i in (0..value.len) {
 		number *= 10
-		number += value.data[i-1] - 30
+		number += value.data[i] - 48
 	}
 	return number
 }

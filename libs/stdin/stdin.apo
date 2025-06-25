@@ -1,6 +1,11 @@
 extern fn realloc(mem: Any, capacity: i8) -> Any {}
 
-fn scan() -> string {
+struct String {
+data: string
+len: i4
+}
+
+fn read_line() -> String {
 	let capacity = 128
 	let total_read = 0
 	let mem : &char = malloc(capacity)
@@ -12,7 +17,7 @@ fn scan() -> string {
 			mem = aux
 		}
 		let to_read: i8 = capacity - total_read
-		let addr = &&mem[total_read]
+		let addr = &mem[total_read]
 		let bytes_in = 0
 		#asm { "
 xor %%rdi, %%rdi
@@ -30,6 +35,5 @@ syscall
 			flag = false
 		}
 	}
-	return mem
+	return new String { data: mem len: total_read - 1 }
 }
-scan()

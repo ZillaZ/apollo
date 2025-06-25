@@ -384,8 +384,7 @@ impl NoirParser {
 
     fn build_single_value(&self, pair: &mut Pair<Rule>, context: &mut AstContext) -> Value {
         match pair.as_rule() {
-            Rule::binary_operation => self.build_binary_op(&mut pair.clone().into_inner(), context),
-            Rule::unary_operation => self.build_unary_op(&mut pair.clone().into_inner(), context),
+            Rule::unary_operation | Rule::binary_operation => self.build_binary_op(&mut pair.clone().into_inner(), context),
             Rule::bvalue => self.build_bvalue(&mut pair.clone().into_inner(), context),
             Rule::base_value => self.build_base(&mut pair.clone().into_inner(), context),
             rule => unreachable!("Found rule {:?} while building single value", rule),
@@ -516,25 +515,6 @@ impl NoirParser {
         }
     }
 
-    fn build_unary_op(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Value {
-        let mut op = Operations::Neg;
-        let mut value = Value::default();
-        for pair in pairs {
-            match pair.as_rule() {
-                Rule::unary_minus => op = Operations::Neg,
-                Rule::not => op = Operations::Not,
-                Rule::bvalue => value = self.build_bvalue(&mut pair.into_inner(), context),
-                rule => unreachable!("Found rule {:?} while building unary operation", rule),
-            }
-        }
-        let mut rtn = Value::default();
-        rtn.value = ValueEnum::UnaryOp(Rc::new(RefCell::new(UnaryOp {
-            prefix: op,
-            value: Rc::new(RefCell::new(value)),
-        })));
-        rtn
-    }
-
     fn build_bvalue(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Value {
         let mut value = Value::default();
         for pair in pairs {
@@ -631,53 +611,26 @@ impl NoirParser {
     }
 
     fn build_binary_op(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Value {
-        let mut lhs = Value::default();
-        let mut rhs = Value::default();
-        let mut changed = false;
-        let mut op = Operations::Add;
-        for pair in pairs {
-            match pair.as_rule() {
-                Rule::bvalue => {
-                    let value = self.build_bvalue(&mut pair.into_inner(), context);
-                    if changed {
-                        rhs = value;
-                    } else {
-                        lhs = value;
-                        changed = true
-                    }
-                }
-                Rule::unary_minus => op = Operations::Sub,
-                Rule::add => op = Operations::Add,
-                Rule::sub => op = Operations::Sub,
-                Rule::mul => op = Operations::Mul,
-                Rule::div => op = Operations::Div,
-                Rule::and => op = Operations::And,
-                Rule::or => op = Operations::Or,
-                Rule::lt => op = Operations::Lt,
-                Rule::gt => op = Operations::Gt,
-                Rule::lte => op = Operations::Lte,
-                Rule::gte => op = Operations::Gte,
-                Rule::cmp_eq => op = Operations::Eq,
-                Rule::neq => op = Operations::Neq,
-                Rule::modulo => op = Operations::Modulo,
-                _ => todo!(),
-            };
+        fn bop_helper(lhs: Value, op: Pair<'_, Rule>, rhs: Value) -> Value {
+            Value::non_heap(ValueEnum::BinaryOp(Rc::new(RefCell::new(BinaryOp { lhs: Rc::new(RefCell::new(lhs)), op: Operations::from(op), rhs: Rc::new(RefCell::new(rhs)) }))))
         }
-        let mut rtn = Value::default();
-        rtn.value = ValueEnum::BinaryOp(Rc::new(RefCell::new(BinaryOp {
-            lhs: Rc::new(RefCell::new(lhs)),
-            op,
-            rhs: Rc::new(RefCell::new(rhs)),
-        })));
-        rtn
+        fn unop_helper(value: Value, op: Pair<'_, Rule>) -> Value {
+            Value::non_heap(ValueEnum::UnaryOp(Rc::new(RefCell::new(UnaryOp { prefix: Operations::from(op), value: Rc::new(RefCell::new(value)) }))))
+        }
+
+        self.pratt_parser.map_primary(|mut primary| match primary.as_rule() {
+            Rule::bvalue | Rule::base_value | Rule::binary_operation | Rule::unary_operation => self.build_single_value(&mut primary, context),
+            _ => unreachable!()
+        }).map_infix(|lhs, op, rhs| bop_helper(lhs, op, rhs))
+          .map_prefix(|prefix, value| unop_helper(value, prefix))
+          .parse(pairs)
     }
 
     fn build_value(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Value {
         let mut peekable = pairs.peekable();
         let pair = peekable.peek().unwrap();
         match pair.as_rule() {
-            Rule::binary_operation => self.build_binary_op(&mut pair.clone().into_inner(), context),
-            Rule::unary_op => self.build_unary_op(&mut pair.clone().into_inner(), context),
+            Rule::unary_operation | Rule::binary_operation => self.build_binary_op(&mut pair.clone().into_inner(), context),
             Rule::bvalue => self.build_bvalue(&mut pair.clone().into_inner(), context),
             Rule::base_value => self.build_base(&mut pair.clone().into_inner(), context),
             rule => unreachable!("Found rule {:?} while building value", rule),
@@ -714,10 +667,9 @@ impl NoirParser {
         } else {
             let value = pairs.peek().unwrap();
             RangeValue::Iterable(Rc::new(RefCell::new(match value.as_rule() {
-                Rule::binary_operation => self.build_binary_op(&mut value.into_inner(), context),
+                Rule::unary_operation | Rule::binary_operation => self.build_binary_op(&mut value.into_inner(), context),
                 Rule::bvalue => self.build_bvalue(&mut value.into_inner(), context),
                 Rule::base_value => self.build_base(&mut value.into_inner(), context),
-                Rule::unary_operation => self.build_unary_op(&mut value.into_inner(), context),
                 rule => unreachable!("Found rule {:?} while building iterable range", rule),
             })))
         }
@@ -806,10 +758,7 @@ impl NoirParser {
         for pair in pairs {
             match pair.as_rule() {
                 Rule::name_str => name = pair.as_str().into(),
-                Rule::unary_operation => {
-                    value = self.build_unary_op(&mut pair.into_inner(), context)
-                }
-                Rule::bvalue => value = self.build_bvalue(&mut pair.into_inner(), context),
+                Rule::unary_operation | Rule::bvalue => value = self.build_bvalue(&mut pair.into_inner(), context),
                 Rule::binary_operation => {
                     value = self.build_binary_op(&mut pair.into_inner(), context)
                 }
@@ -828,10 +777,9 @@ impl NoirParser {
                 Rule::call => {
                     value.value = ValueEnum::Call(self.build_call(&mut pair.into_inner(), context))
                 }
-                Rule::binary_operation => {
+                Rule::unary_operation | Rule::binary_operation => {
                     index = self.build_binary_op(&mut pair.into_inner(), context)
                 }
-                Rule::unary_op => index = self.build_unary_op(&mut pair.into_inner(), context),
                 Rule::bvalue => index = self.build_bvalue(&mut pair.into_inner(), context),
                 Rule::name => {
                     value.value = ValueEnum::Name(self.build_name(&mut pair.into_inner(), context))
@@ -845,7 +793,17 @@ impl NoirParser {
     fn build_char(&self, pair: Pair<Rule>, context: &mut AstContext) -> ValueEnum {
         let aux = pair.as_str();
         let aux = &aux[1..aux.len() - 1];
-        ValueEnum::Char(*aux.chars().peekable().peek().unwrap())
+        let aux = if aux.len() > 1 {
+            match aux {
+                "\\n" => '\n',
+                "\\t" => '\t',
+                "\\0" => '\0',
+                seq => unreachable!("Found sequence {} {:?}", seq, seq.as_bytes())
+            }
+        }else{
+            aux.chars().next().unwrap()
+        };
+        ValueEnum::Char(aux)
     }
 
     fn build_array(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Array {

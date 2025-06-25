@@ -1,7 +1,7 @@
 use gccjit::{Block, Field, Function, LValue, RValue, Struct, Type};
+use super::structs::Expr;
 use std::collections::{HashMap, HashSet};
 
-use super::gcc::GccValues;
 
 pub struct Memory<'a> {
     pub name: String,
@@ -27,7 +27,8 @@ pub struct Memory<'a> {
     pub function_addresses: HashMap<String, RValue<'a>>,
     pub pointer_types: HashSet<Type<'a>>,
     pub imports: HashSet<String>,
-    pub enum_variants: HashMap<Type<'a>, HashMap<String, (i32, Option<Field<'a>>)>>
+    pub enum_variants: HashMap<Type<'a>, HashMap<String, (i32, Option<Field<'a>>)>>,
+    pub block_tail_expr: Vec<Expr>
 }
 
 impl<'a> Memory<'a> {
@@ -58,6 +59,7 @@ impl<'a> Memory<'a> {
         let pointer_types = HashSet::new();
         let imports = HashSet::new();
         let enum_variants = HashMap::new();
+        let block_tail_expr = Vec::new();
         Self {
             name,
             last_block,
@@ -82,7 +84,8 @@ impl<'a> Memory<'a> {
             field_types,
             pointer_types,
             imports,
-            enum_variants
+            enum_variants,
+            block_tail_expr
         }
     }
     pub fn unconst_type(&self, r#type: Type<'a>) -> Type<'a> {
