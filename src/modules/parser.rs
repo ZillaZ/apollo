@@ -70,32 +70,47 @@ impl NoirParser {
     ) -> HashMap<Import, Rc<RefCell<Ast>>> {
         let mut rtn = HashMap::new();
         for import in imports {
-            let lib_path = self.parse_import_path(&import);
-            let lib_path = format!("{}.apo", lib_path);
-            println!("{lib_path}");
-            let input = std::fs::read_to_string(lib_path).unwrap();
-            let mut pairs: Pairs<Rule> = Program::parse(Rule::program, &input).unwrap();
-            let ast = self.gen_ast(&mut pairs, import.name.clone());
-            rtn.insert(import.clone(), Rc::new(RefCell::new(ast)));
+            let lib_paths = self.parse_import_path(&import);
+            println!("{:?}", lib_paths);
+            for lib_path in lib_paths.iter().map(|x| {
+                let mut aux : Vec<String> = x.split("/").map(|x| x.to_string()).collect();
+                aux.pop();
+                aux.join("/")
+            }) {
+                let lib_path = format!("{}.apo", lib_path);
+                println!("{lib_path}");
+                let input = std::fs::read_to_string(lib_path).unwrap();
+                let mut pairs: Pairs<Rule> = Program::parse(Rule::program, &input).unwrap();
+                let ast = self.gen_ast(&mut pairs, import.namespace.name.clone());
+                rtn.insert(import.clone(), Rc::new(RefCell::new(ast)));
+            }
         }
         rtn
     }
 
-    fn parse_import_path(&self, import: &Import) -> String {
-        let names = import.name.split("::").collect::<Vec<_>>();
-        let mut final_path = Vec::new();
-        final_path.push(match names[0] {
-            "std" => std::env::var("APOLLO_LIBS").unwrap(),
-            _ => format!(
-                "{}/{}",
-                std::env::current_dir().unwrap().to_str().unwrap(),
-                names[0]
-            ),
-        });
-        for i in 1..names.len() {
-            final_path.push(names[i].to_string());
+    fn parse_import_path(&self, import: &Import) -> Vec<String> {
+        fn recursive_descent(namespace: &Namespace, acc: String, paths: &mut Vec<String>) {
+            if namespace.next.is_empty() {
+                paths.push(format!("{acc}/{}", namespace.name));
+            }else{
+                for namespace in namespace.next.iter() {
+                    let acc = if namespace.next.is_empty() {
+                        acc.clone()
+                    }else{
+                        format!("{acc}/{}", namespace.name)
+                    };
+                    recursive_descent(namespace, acc, paths);
+                }
+            }
         }
-        final_path.join("/")
+        let mut paths = vec![];
+        let start = if import.namespace.name == "std" {
+            std::env::var("APOLLO_LIBS").unwrap()
+        }else{
+            std::env::current_dir().unwrap().to_str().unwrap().to_string()
+        };
+        recursive_descent(&import.namespace, start, &mut paths);
+        paths
     }
 
     fn build_expression(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Vec<Expr> {
@@ -140,15 +155,6 @@ impl NoirParser {
             };
             expressions.push(expr);
         }
-        context.variables.iter().for_each(|(_, y)| {
-            y.iter().for_each(|(x, y)| {
-                if y.heap_allocated {
-                    println!("{} is heap allocated", x)
-                } else {
-                    println!("{} is stack allocated. value set to {:?}", x, y)
-                }
-            })
-        });
         expressions
     }
 
@@ -347,39 +353,27 @@ impl NoirParser {
     }
 
     fn build_import(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Import {
-        let mut import = Import {
-            kind: ImportKind::Static,
-            name: String::new(),
-            imported: Vec::new(),
-        };
+        let mut namespace = Namespace::default();
         for pair in pairs {
             match pair.as_rule() {
-                Rule::namespace => import.name = self.build_namespace(&mut pair.into_inner()),
+                Rule::namespace => namespace = self.build_namespace(&mut pair.into_inner()),
                 _ => unreachable!(),
             }
         }
-        context.imported.push(import.clone());
-        import
+        Import { kind: ImportKind::Static, namespace }
     }
 
-    fn build_imported_fn(&self, pairs: &mut Pairs<Rule>) -> Vec<String> {
-        let mut imports = Vec::new();
+    fn build_namespace(&self, pairs: &mut Pairs<Rule>) -> Namespace {
+        let mut name = String::new();
+        let mut next = vec![];
         for pair in pairs {
-            let eval = pair
-                .into_inner()
-                .map(|x| x.as_str().to_string())
-                .collect::<Vec<_>>();
-            imports.push(eval.join("/"));
+            match pair.as_rule() {
+                Rule::namespace_name => name = pair.as_str().into(),
+                Rule::namespace => next.push(Box::new(self.build_namespace(&mut pair.into_inner()))),
+                _ => unreachable!()
+            }
         }
-        imports
-    }
-
-    fn build_namespace(&self, pairs: &mut Pairs<Rule>) -> String {
-        let mut vec = Vec::new();
-        for pair in pairs {
-            vec.push(pair.as_str().to_string());
-        }
-        vec.join("::")
+        Namespace { name, next }
     }
 
     fn build_single_value(&self, pair: &mut Pair<Rule>, context: &mut AstContext) -> Value {
@@ -561,7 +555,6 @@ impl NoirParser {
                     value.value = ValueEnum::Constructor(Rc::new(RefCell::new(
                         self.build_constructor(&mut eval.into_inner(), context),
                     )));
-                    println!("processed {:?}", value.value);
                 }
                 Rule::field_access => {
                     value.value = ValueEnum::FieldAccess(Rc::new(RefCell::new(
@@ -592,10 +585,10 @@ impl NoirParser {
                     let mut datatype = String::new();
                     let mut variant = String::new();
                     let mut inner = None;
-                    let mut switch = false;
                     for rule in eval.into_inner() {
                         match rule.as_rule() {
-                            Rule::struct_type => if !switch { switch = true; datatype = rule.as_str().into(); } else { variant = rule.as_str().into(); },
+                            Rule::struct_type => datatype = rule.as_str().into(),
+                            Rule::enum_variant_name => variant = rule.as_str().into(),
                             Rule::bvalue => inner = Some(self.build_bvalue(&mut rule.into_inner(), context)),
                             Rule::value => inner = Some(self.build_value(&mut rule.into_inner(), context)),
                             Rule::binary_operation => inner = Some(self.build_binary_op(&mut rule.into_inner(), context)),
@@ -735,7 +728,6 @@ impl NoirParser {
                     .clone();
             }
         }
-        println!("{:?}", head);
         head
     }
 
@@ -886,7 +878,7 @@ impl NoirParser {
                     for eval in pair.into_inner() {
                         match eval.as_rule() {
                             Rule::name_str => if !switch { switch = true; name = eval.as_str().into(); } else { var = eval.as_str().into(); },
-                            Rule::struct_type => variant = eval.as_str().into(),
+                            Rule::enum_variant_name => variant = eval.as_str().into(),
                             _ => unreachable!()
                         }
                     }

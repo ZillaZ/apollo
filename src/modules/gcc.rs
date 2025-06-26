@@ -278,7 +278,6 @@ impl<'a> GccContext<'a> {
             }else{
                 None
             };
-            println!("{:?}", arg);
             extended.add_input_operand(name, &arg.constraint, self.parse_value(&mut Value::non_heap(arg.value.clone()), block, memory, ast).rvalue());
 
         }
@@ -684,14 +683,14 @@ impl<'a> GccContext<'a> {
     ) {
         let imports = &mut ast.imports;
         for (import, ref mut ast) in imports.iter_mut() {
-            println!("{:?}", import);
-            if all_imports.contains(import.name.as_str()) {
+            if all_imports.contains(import.namespace.name.as_str()) {
                 continue;
             }
-            all_imports.insert(import.name.clone());
+            all_imports.insert(import.namespace.name.clone());
             let imported_ast = Rc::get_mut(ast).unwrap();
-            self.gen_bytecode(imported_ast.get_mut(), all_imports, memory, false, false, "".into());
-            //self.push_to_module(&import, memory, &mut new_memory);
+            let mut new_memory = Memory::new(import.namespace.name.clone());
+            self.gen_bytecode(imported_ast.get_mut(), all_imports, &mut new_memory, false, false, "".into());
+            self.push_to_module(&import, memory, &mut new_memory);
         }
     }
 
@@ -701,78 +700,48 @@ impl<'a> GccContext<'a> {
         memory: &mut Memory<'a>,
         new_memory: &mut Memory<'a>,
     ) {
-        if import.imported.is_empty() {
-            let base_name = import.name.split("::").last().unwrap();
-            new_memory.functions.iter().for_each(|(name, function)| {
-                memory
-                    .functions
-                    .insert(format!("{}::{}", base_name, name), *function);
-            });
-            new_memory.structs.iter().for_each(|(r#struct, fields)| {
-                memory.structs.insert(*r#struct, fields.clone());
-            });
-            new_memory.traits.iter().for_each(|(name, fields)| {
-                memory
-                    .traits
-                    .insert(format!("{}::{}", base_name, name), fields.clone());
-            });
-            new_memory.trait_types.iter().for_each(|(types, name)| {
-                memory
-                    .trait_types
-                    .insert(*types, format!("{}::{}", base_name, name));
-            });
-            new_memory.datatypes.iter().for_each(|(name, datatype)| {
-                memory
-                    .datatypes
-                    .insert(format!("{}::{}", base_name, name), *datatype);
-            });
-            new_memory.field_types.iter().for_each(|(field, datatype)| {
-                memory.field_types.insert(*field, *datatype);
-            });
-            new_memory
-                .function_addresses
-                .iter()
-                .for_each(|(name, address)| {
-                    memory
-                        .function_addresses
-                        .insert(format!("{}::{}", base_name, name), *address);
-                });
-        } else {
-            import.imported.iter().for_each(|name| {
-                let pair = name.split("/").collect::<Vec<_>>();
-                let kind = pair[0];
-                let name = pair[1];
-                match kind {
-                    "struct" => {
-                        let value = new_memory.datatypes.get(name).unwrap();
-                        let other = new_memory.structs.get(&value.is_struct().unwrap()).unwrap();
-                        memory.datatypes.insert(name.to_string(), *value);
-                        memory
-                            .structs
-                            .insert(value.is_struct().unwrap(), other.clone());
+        fn recursive_descent(node: &structs::Namespace, acc: &mut Vec<String>) {
+            for namespace in node.next.iter() {
+                let namespace = namespace.as_ref();
+                if !namespace.next.is_empty() {
+                    recursive_descent(namespace, acc);
+                }else{
+                    let name = format!("{}::{}", node.name, namespace.name.clone());
+                    if !acc.contains(&name) {
+                        acc.push(name);
                     }
-                    "function" => {
-                        let function = new_memory.functions.get(name).unwrap();
-                        memory.functions.insert(name.to_string(), *function);
-                    }
-                    "trait" => {
-                        let trait_type = new_memory.datatypes.get(name).unwrap();
-                        let struct_type = new_memory
-                            .structs
-                            .get(&trait_type.is_struct().unwrap())
-                            .unwrap();
-                        let name = new_memory.trait_types.get(trait_type).unwrap();
-                        let fields = new_memory.traits.get(name).unwrap();
-                        memory.datatypes.insert(name.clone(), *trait_type);
-                        memory
-                            .structs
-                            .insert(trait_type.is_struct().unwrap(), struct_type.clone());
-                        memory.trait_types.insert(*trait_type, name.clone());
-                        memory.traits.insert(name.clone(), fields.to_vec());
-                    }
-                    _ => unreachable!(),
                 }
-            });
+            }
+        }
+        let mut imports = vec![];
+        recursive_descent(&import.namespace, &mut imports);
+        for ref import in imports {
+            let name = import.split("::").last().unwrap();
+            println!("NAME {}", import);
+            if let Some(function) = new_memory.functions.get(name) {
+                memory.functions.insert(import.into(), *function);
+            }
+            if let Some(datatype) = new_memory.datatypes.get(name) {
+                memory.datatypes.insert(import.into(), *datatype);
+                if let Some(ref struct_type) = datatype.is_struct() {
+                    let fields = new_memory.structs.get(struct_type).unwrap();
+                    memory.structs.insert(*struct_type, fields.clone());
+                    for i in 0..struct_type.get_field_count() {
+                        let field = struct_type.get_field(i as i32);
+                        let field_type = new_memory.field_types.get(&field).unwrap();
+                        memory.field_types.insert(field, *field_type);
+                    }
+                }
+                if let Some(_) = new_memory.trait_types.get(datatype) {
+                    memory.trait_types.insert(*datatype, import.into());
+                }
+            }
+            if let Some(traits) = new_memory.traits.get(name) {
+                memory.traits.insert(import.into(), traits.clone());
+            }
+            if let Some(function_address) = new_memory.function_addresses.get(name) {
+                memory.function_addresses.insert(import.into(), *function_address);
+            }
         }
     }
 
@@ -942,7 +911,6 @@ impl<'a> GccContext<'a> {
         let kind_field = datatype.is_struct().unwrap().get_field(0);
         let variant_field = datatype.is_struct().unwrap().get_field(1);
         let variants = memory.enum_variants.get(&datatype).unwrap().clone();
-        println!("{:?}", enum_value);
         let (index, active_field) = variants.get(&enum_value.variant).unwrap();
         let function = block.get_function();
         let dummy = function.new_local(None, datatype, ".");
@@ -1160,7 +1128,6 @@ impl<'a> GccContext<'a> {
     }
 
     fn parse_char(&'a self, c: &char, memory: &mut Memory<'a>) -> GccValues<'a> {
-        println!("CHAR IS {c}");
         GccValues::R(self.context.new_rvalue_from_int(
             *memory.datatypes.get("char").unwrap(),
             c.to_string().as_bytes()[0] as i32,
@@ -1191,7 +1158,6 @@ impl<'a> GccContext<'a> {
                     None => break
                 }
             }
-            println!("TYPEOF VALUE TO ACCESS IS {:?}", rvalue.rvalue().get_type());
             let access = self.context.new_array_access(None, rvalue.rvalue(), index);
             let access = self.access_name(&access, name);
             GccValues::R(access.rvalue())

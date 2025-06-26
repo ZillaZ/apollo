@@ -1,4 +1,4 @@
-use std::stdin::stdin
+use std::stdio { stdin::String stdin::read_line }
 
 enum Result {
 	Ok(i4)
@@ -23,13 +23,13 @@ fn print(result: Result) {
 	return
 }
 
-fn input(message: string) -> String {
+fn input(message: string) -> stdin::String {
 	printf("%s\n", message)
-	let input = read_line()
+	let input = stdin::read_line()
 	return input
 }
 
-fn stoi(value: String) -> i4 {
+fn stoi(value: stdin::String) -> i4 {
 	let number = 0
 	for i in (0..value.len) {
 		number *= 10

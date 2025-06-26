@@ -432,11 +432,16 @@ pub enum ImportKind {
     Static,
 }
 
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+pub struct Namespace {
+    pub name: String,
+    pub next: Vec<Box<Namespace>>
+}
+
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Import {
     pub kind: ImportKind,
-    pub name: String,
-    pub imported: Vec<String>,
+    pub namespace: Namespace,
 }
 
 #[derive(Clone, Debug, PartialEq)]
