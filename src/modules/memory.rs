@@ -29,7 +29,8 @@ pub struct Memory<'a> {
     pub enum_variants: HashMap<Type<'a>, HashMap<String, (i32, Option<Field<'a>>)>>,
     pub block_tail_expr: VecDeque<Expr>,
     pub functions_with_traits: HashMap<String, AstFunction>,
-    pub impl_with_traits: HashMap<String, (String, ImplMethod)>
+    pub impl_with_traits: HashMap<String, (String, ImplMethod)>,
+    pub should_delay_ref_ops: bool
 }
 
 impl<'a> Memory<'a> {
@@ -65,7 +66,8 @@ impl<'a> Memory<'a> {
             enum_variants: HashMap::new(),
             block_tail_expr: VecDeque::new(),
             functions_with_traits: HashMap::new(),
-            impl_with_traits: HashMap::new()
+            impl_with_traits: HashMap::new(),
+            should_delay_ref_ops: false
         }
     }
     pub fn unconst_type(&self, r#type: Type<'a>) -> Type<'a> {

@@ -1031,11 +1031,13 @@ impl<'a> GccContext<'a> {
                         .get(&name.name)
                         .expect(&format!("{} is not in scope for {}", name.name, memory.function_scope));
                     let mut value = GccValues::L(*var);
-                    for _ in 0..name.op_count {
-                        value = match name.op {
-                            Some(RefOp::Reference) => GccValues::R(var.get_address(None)),
-                            Some(RefOp::Dereference) => GccValues::R(var.to_rvalue()),
-                            None => GccValues::L(var.to_lvalue()),
+                    if !memory.should_delay_ref_ops {
+                        for _ in 0..name.op_count {
+                            value = match name.op {
+                                Some(RefOp::Reference) => GccValues::R(var.get_address(None)),
+                                Some(RefOp::Dereference) => GccValues::R(var.to_rvalue()),
+                                None => GccValues::L(var.to_lvalue()),
+                            }
                         }
                     }
                     value
@@ -1144,22 +1146,16 @@ impl<'a> GccContext<'a> {
         memory: &mut Memory<'a>,
         ast: &mut Ast,
     ) -> GccValues<'a> {
-        let mut rvalue = self
+        memory.should_delay_ref_ops = true;
+        let rvalue = self
             .parse_value(&mut access.value, block, memory, ast);
+        memory.should_delay_ref_ops = false;
         let index = self
             .parse_value(&mut access.index, block, memory, ast)
             .rvalue();
         if let ValueEnum::Name(ref name) = access.value.value {
-            for _ in 0..name.op_count {
-                rvalue = match name.op {
-                    Some(RefOp::Reference) => GccValues::L(rvalue.dereference()),
-                    Some(RefOp::Dereference) => GccValues::R(rvalue.dereference().get_address(None)),
-                    None => break
-                }
-            }
             let access = self.context.new_array_access(None, rvalue.rvalue(), index);
-            let access = self.access_name(&access, name);
-            GccValues::R(access.rvalue())
+            self.access_name(&access, name)
         }else{
             GccValues::L(self.context.new_array_access(None, rvalue.rvalue(), index))
         }
@@ -1840,7 +1836,11 @@ impl<'a> GccContext<'a> {
             return GccValues::Type(*datatype);
         }
         let value = if let Some(var) = variables.get(&name.name) {
-            self.access_name(var, name)
+            if memory.should_delay_ref_ops {
+                GccValues::L(*var)
+            }else{
+                self.access_name(var, name)
+            }
         } else if let Some(address) = memory.function_addresses.get(&name.name) {
             GccValues::R(*address)
         } else {

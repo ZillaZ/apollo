@@ -30,7 +30,7 @@ syscall
 			flag = false
 		}
 		if flag == false and bytes_in != 0 {
-			&mem[total_read - 1] = '\0'
+			mem[total_read - 1] = '\0'
 		}
 	}
 	return new String { data: mem len: total_read - 1 }
