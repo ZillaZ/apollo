@@ -41,7 +41,7 @@ fn main() {
     let mut ast = parser.gen_ast(&mut pairs, "main".into());
     let gcc = GccContext::new(&context);
     let mut imports = HashSet::new();
-    gcc.gen_bytecode(&mut ast, &mut imports, &mut memory, true, args.debug, args.out);
+    gcc.gen_bytecode(&mut ast, &mut imports, &mut memory, true, args.debug, true, args.out);
 }
 
 fn read_file(path: &str) -> String {

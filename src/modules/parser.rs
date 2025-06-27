@@ -225,27 +225,69 @@ impl NoirParser {
     fn build_impl(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Impl {
         let mut switched = false;
         let mut trait_name = String::new();
-        let mut struct_name = String::new();
-        let mut block = Block::default();
+        let mut target_name = String::new();
+        let mut methods = vec![];
         for pair in pairs {
             match pair.as_rule() {
                 Rule::name => {
                     if switched {
-                        struct_name = pair.as_str().into();
+                        target_name = pair.as_str().into();
                     } else {
                         trait_name = pair.as_str().into();
-                        switched = true;
                     }
                 }
-                Rule::impl_block => block = self.build_block(&mut pair.into_inner(), context),
+                Rule::impl_for => switched = true,
+                Rule::impl_block => methods = self.build_impl_block(&mut pair.into_inner(), context),
                 _ => todo!(),
             }
         }
         Impl {
             trait_name,
-            struct_name,
-            block,
+            target_name,
+            methods,
         }
+    }
+
+    fn build_impl_block(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Vec<ImplMethod> {
+        let mut rtn = vec![];
+        for pair in pairs {
+            let expr = match pair.as_rule() {
+                Rule::function => self.build_impl_method(&mut pair.into_inner(), context),
+                _ => unreachable!()
+            };
+            rtn.push(expr);
+        }
+        rtn
+    }
+
+    fn build_impl_method(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> ImplMethod {
+        let mut name = String::new();
+        let mut params = vec![];
+        let mut datatype = None;
+        let mut body = Block::default();
+        for pair in pairs {
+            match pair.as_rule() {
+                Rule::name => name = pair.as_str().into(),
+                Rule::datatype => datatype = Some(self.build_datatype(&mut pair.into_inner(), context)),
+                Rule::args => params = self.build_args(&mut pair.into_inner(), context),
+                Rule::block => body = self.build_block(&mut pair.into_inner(), context),
+                _ => unreachable!()
+            }
+        }
+        ImplMethod { name, params, datatype, body }
+    }
+
+    fn build_impl_type(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> ImplType {
+        let mut name = String::new();
+        let mut implements = vec![];
+        let mut switched = false;
+        for pair in pairs {
+            match pair.as_rule() {
+                Rule::name => if switched { implements.push(pair.as_str().to_string()) } else { name = pair.as_str().to_string(); switched = true },
+                _ => unreachable!()
+            }
+        }
+        ImplType { name, implements }
     }
 
     fn build_for_loop(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> ForLoop {
@@ -299,40 +341,36 @@ impl NoirParser {
 
     fn build_trait(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Trait {
         let mut name = String::new();
-        let mut fields = Vec::new();
+        let mut methods = Vec::new();
         for pair in pairs {
             match pair.as_rule() {
                 Rule::name_str => name = pair.as_str().into(),
-                Rule::field_decl => {
-                    fields.push(self.build_field_decl(&mut pair.into_inner(), context))
+                Rule::trait_decl => {
+                    let next = pair.into_inner().next().unwrap();
+                    match next.as_rule() {
+                        Rule::trait_function => methods.push(self.build_trait_method(&mut next.into_inner(), context)),
+                        _ => unreachable!()
+                    }
                 }
                 _ => unreachable!(),
             }
         }
-        Trait { name, fields }
+        Trait { name, methods }
     }
 
-    fn build_struct(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> StructDecl {
+    fn build_trait_method(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> TraitMethod {
         let mut name = String::new();
-        let mut fields = Vec::new();
-        let mut traits = Vec::new();
+        let mut params = vec![];
+        let mut datatype = None;
         for pair in pairs {
             match pair.as_rule() {
                 Rule::name_str => name = pair.as_str().into(),
-                Rule::field_decl => {
-                    fields.push(self.build_field_decl(&mut pair.into_inner(), context))
-                }
-                Rule::trait_field => traits.push(pair.as_str()[2..pair.as_str().len() - 1].into()),
-                rule => unreachable!("Rule {:?}", rule),
+                Rule::parameter => params.push(self.build_param(&mut pair.into_inner(), context)),
+                Rule::datatype => datatype = Some(self.build_datatype(&mut pair.into_inner(), context)),
+                _ => unreachable!()
             }
         }
-        let r#struct = StructDecl {
-            name: name.clone(),
-            fields,
-            traits,
-        };
-        context.structs.insert(name, r#struct.clone());
-        r#struct
+        TraitMethod { name, params, datatype }
     }
 
     fn build_field_decl(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> FieldDecl {
@@ -350,6 +388,24 @@ impl NoirParser {
             }
         }
         FieldDecl { name, datatype }
+    }
+
+    fn build_struct(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> StructDecl {
+        let mut name = String::new();
+        let mut fields = Vec::new();
+        for pair in pairs {
+            match pair.as_rule() {
+                Rule::name_str => name = pair.as_str().into(),
+                Rule::field_decl => fields.push(self.build_field_decl(&mut pair.into_inner(), context)),
+                rule => unreachable!("Rule {:?}", rule),
+            }
+        }
+        let r#struct = StructDecl {
+            name: name.clone(),
+            fields
+        };
+        context.structs.insert(name, r#struct.clone());
+        r#struct
     }
 
     fn build_import(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Import {
@@ -1119,18 +1175,23 @@ impl NoirParser {
                 op: None,
                 op_count: 0,
             },
-            datatype: Type::default(),
+            datatype: ParameterType::Type(Type::default()),
         };
         for pair in pairs {
             match pair.as_rule() {
                 Rule::name => arg.name = self.build_name(&mut pair.into_inner(), context),
                 Rule::datatype => {
-                    arg.datatype = self.build_datatype(&mut pair.into_inner(), context)
+                    arg.datatype = ParameterType::Type(self.build_datatype(&mut pair.into_inner(), context))
                 }
+                Rule::implements_type => arg.datatype = ParameterType::Implements(self.build_implements_type(&mut pair.into_inner(), context)),
                 _ => unreachable!(),
             }
         }
         arg
+    }
+
+    fn build_implements_type(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Vec<String> {
+        pairs.map(|x| if let Rule::name_str = x.as_rule() { x.as_str().to_string() } else { panic!() }).collect()
     }
 
     fn build_datatype(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Type {

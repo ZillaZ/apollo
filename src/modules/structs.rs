@@ -6,9 +6,16 @@ use super::{ast_context::AstContext, parser::Ast};
 use std::{cell::RefCell, rc::Rc};
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct TraitMethod {
+    pub name: String,
+    pub params: Vec<Parameter>,
+    pub datatype: Option<Type>
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct Trait {
     pub name: String,
-    pub fields: Vec<FieldDecl>,
+    pub methods: Vec<TraitMethod>
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -115,9 +122,15 @@ impl ToString for DataType {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub enum ParameterType {
+    Type(Type),
+    Implements(Vec<String>)
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct Arg {
     pub name: Name,
-    pub datatype: Type,
+    pub datatype: ParameterType,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -182,6 +195,12 @@ pub struct ArrayAccess {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct TraitType {
+    pub name: String,
+    pub implements: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct FieldDecl {
     pub name: String,
     pub datatype: Type,
@@ -190,8 +209,7 @@ pub struct FieldDecl {
 #[derive(Clone, Debug, PartialEq)]
 pub struct StructDecl {
     pub name: String,
-    pub fields: Vec<FieldDecl>,
-    pub traits: Vec<String>,
+    pub fields: Vec<FieldDecl>
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -372,10 +390,24 @@ pub struct Declaration {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct ImplType {
+    pub name: String,
+    pub implements: Vec<String>
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ImplMethod {
+    pub name: String,
+    pub params: Vec<Arg>,
+    pub datatype: Option<Type>,
+    pub body: Block
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct Impl {
     pub trait_name: String,
-    pub struct_name: String,
-    pub block: Block,
+    pub target_name: String,
+    pub methods: Vec<ImplMethod>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

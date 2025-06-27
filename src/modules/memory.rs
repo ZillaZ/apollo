@@ -1,7 +1,6 @@
 use gccjit::{Block, Field, Function, LValue, RValue, Struct, Type};
-use super::structs::Expr;
-use std::collections::{HashMap, HashSet};
-
+use super::structs::{Expr, Trait, Function as AstFunction, ImplMethod};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 pub struct Memory<'a> {
     pub name: String,
@@ -13,7 +12,7 @@ pub struct Memory<'a> {
     pub primitive_types: HashMap<Type<'a>, Type<'a>>,
     pub constructors: HashMap<String, HashMap<String, String>>,
     pub structs: HashMap<Struct<'a>, HashMap<String, i32>>,
-    pub traits: HashMap<String, Vec<(String, Type<'a>)>>,
+    pub traits: HashMap<String, Trait>,
     pub function_scope: String,
     pub anon_count: u32,
     pub trait_types: HashMap<Type<'a>, String>,
@@ -22,70 +21,51 @@ pub struct Memory<'a> {
     pub continue_block: Option<Block<'a>>,
     pub blocks: HashMap<Block<'a>, bool>,
     pub field_types: HashMap<Field<'a>, Type<'a>>,
-    pub implementations: HashMap<String, Function<'a>>,
-    pub impls: HashMap<Type<'a>, Vec<(String, Function<'a>)>>,
+    pub impls: HashMap<Type<'a>, HashMap<String, HashMap<String, Function<'a>>>>,
+    pub impl_methods: HashMap<String, HashMap<Type<'a>, Function<'a>>>,
     pub function_addresses: HashMap<String, RValue<'a>>,
     pub pointer_types: HashSet<Type<'a>>,
     pub imports: HashSet<String>,
     pub enum_variants: HashMap<Type<'a>, HashMap<String, (i32, Option<Field<'a>>)>>,
-    pub block_tail_expr: Vec<Expr>
+    pub block_tail_expr: VecDeque<Expr>,
+    pub functions_with_traits: HashMap<String, AstFunction>,
+    pub impl_with_traits: HashMap<String, (String, ImplMethod)>
 }
 
 impl<'a> Memory<'a> {
     pub fn new(name: String) -> Self {
-        let last_block = None;
-        let variables = HashMap::new();
-        let functions = HashMap::new();
-        let builtins = vec!["printf", "strnlen", "malloc", "memcpy"]
+        let builtins = vec!["printf", "strnlen", "malloc", "memcpy", "realloc"]
             .iter()
             .map(|x| x.to_string())
             .collect::<_>();
-        let datatypes = HashMap::new();
-        let primitive_types = HashMap::new();
-        let constructors = HashMap::new();
-        let structs = HashMap::new();
-        let traits = HashMap::new();
-        let function_scope = "main".into();
-        let anon_count = 0;
-        let trait_types = HashMap::new();
-        let index = None;
-        let units = HashMap::new();
-        let continue_block = None;
-        let blocks = HashMap::new();
-        let field_types = HashMap::new();
-        let implementations = HashMap::new();
-        let impls = HashMap::new();
-        let function_addresses = HashMap::new();
-        let pointer_types = HashSet::new();
-        let imports = HashSet::new();
-        let enum_variants = HashMap::new();
-        let block_tail_expr = Vec::new();
         Self {
             name,
-            last_block,
-            variables,
-            functions,
             builtins,
-            datatypes,
-            primitive_types,
-            constructors,
-            structs,
-            traits,
-            function_scope,
-            anon_count,
-            trait_types,
-            index,
-            units,
-            continue_block,
-            implementations,
-            impls,
-            function_addresses,
-            blocks,
-            field_types,
-            pointer_types,
-            imports,
-            enum_variants,
-            block_tail_expr
+            last_block: None,
+            variables: HashMap::new(),
+            functions:HashMap::new(),
+            datatypes:HashMap::new(),
+            primitive_types: HashMap::new(),
+            constructors: HashMap::new(),
+            structs:HashMap::new(),
+            traits:HashMap::new(),
+            function_scope: "main".into(),
+            anon_count: 0,
+            trait_types:HashMap::new(),
+            index: None,
+            units:HashMap::new(),
+            continue_block:None,
+            impls:HashMap::new(),
+            impl_methods:HashMap::new(),
+            function_addresses:HashMap::new(),
+            blocks:HashMap::new(),
+            field_types:HashMap::new(),
+            pointer_types:HashSet::new(),
+            imports:HashSet::new(),
+            enum_variants: HashMap::new(),
+            block_tail_expr: VecDeque::new(),
+            functions_with_traits: HashMap::new(),
+            impl_with_traits: HashMap::new()
         }
     }
     pub fn unconst_type(&self, r#type: Type<'a>) -> Type<'a> {

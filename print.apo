@@ -1,0 +1,24 @@
+use std::stdio { stdin::read_line }
+
+trait Display {
+	fn fmt(self: ()) -> string
+}
+
+impl Display for String {
+	fn fmt(self: String) -> string {
+		return self.data
+	}
+}
+
+fn input(prompt: string) -> String {
+	printf("%s\n", prompt)
+	return stdin::read_line()
+}
+
+fn print(value: (Display)) {
+	printf("%s\n", value.fmt())
+	return
+}
+
+let name = input("What's your name?")
+print(name)

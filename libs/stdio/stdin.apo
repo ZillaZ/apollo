@@ -1,10 +1,5 @@
 extern fn realloc(mem: Any, capacity: i8) -> Any {}
 
-struct String {
-data: string
-len: i4
-}
-
 fn read_line() -> String {
 	let capacity = 128
 	let total_read = 0
@@ -33,6 +28,9 @@ syscall
 		total_read += bytes_in
 		if bytes_in == 0 or (total_read >= 1 and mem[total_read-1] == '\n') {
 			flag = false
+		}
+		if flag == false and bytes_in != 0 {
+			&mem[total_read - 1] = '\0'
 		}
 	}
 	return new String { data: mem len: total_read - 1 }
