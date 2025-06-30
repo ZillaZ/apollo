@@ -1,4 +1,4 @@
-use gccjit::{Block, Field, Function, LValue, RValue, Struct, Type};
+use gccjit::{Block, Field, Function, LValue, Parameter, RValue, Struct, Type};
 use super::structs::{Expr, Trait, Function as AstFunction, ImplMethod};
 use std::collections::{HashMap, HashSet, VecDeque};
 
@@ -30,6 +30,7 @@ pub struct Memory<'a> {
     pub block_tail_expr: VecDeque<Expr>,
     pub functions_with_traits: HashMap<String, AstFunction>,
     pub impl_with_traits: HashMap<String, (String, ImplMethod)>,
+    pub variadic_args: HashMap<Function<'a>, Vec<Parameter<'a>>>,
     pub should_delay_ref_ops: bool
 }
 
@@ -67,6 +68,7 @@ impl<'a> Memory<'a> {
             block_tail_expr: VecDeque::new(),
             functions_with_traits: HashMap::new(),
             impl_with_traits: HashMap::new(),
+            variadic_args: HashMap::new(),
             should_delay_ref_ops: false
         }
     }

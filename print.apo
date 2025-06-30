@@ -1,5 +1,12 @@
 use std::stdio { stdin::read_line }
 
+extern fn malloc(size: i8) -> Any {}
+
+trait Clone {
+	type T = ()
+	fn clone(self: T) -> T
+}
+
 trait Display {
 	fn fmt(self: ()) -> string
 }
@@ -10,15 +17,58 @@ impl Display for String {
 	}
 }
 
+impl Display for i4 {
+	fn fmt(self: i4) -> string {
+		let copy = self
+		let len = 1
+		while copy > 9 {
+			copy /= 10
+			len += 1
+		}
+		let data : &char = malloc(len+1)
+		data[len] = '\0'
+		for i in (1..len) {
+			data[len-i] = (self % 10) + 48
+			self /= 10
+		}
+		data[0] = self + 48
+		return data
+	}
+}
+
+impl Display for string {
+	fn fmt(self: string) -> string {
+		return self
+	}
+}
+
+impl Clone for i4 {
+	type T = i4
+	fn clone(self: i4) -> i4 {
+		return self
+	}
+}
+
+impl Clone for String {
+	type T = String
+	fn clone(self: String) -> String {
+		let clone = malloc(self.len)
+		memcpy(clone, self.data, self.len)
+		return new String { data: clone len: self.len }
+	}
+}
+
 fn input(prompt: string) -> String {
 	printf("%s\n", prompt)
 	return stdin::read_line()
 }
 
-fn print(value: (Display)) {
-	printf("%s\n", value.fmt())
+fn print(message: string, ...variadic: (Display)) {
+	printf("%s: %d\n", message, variadic)
+	.variadics {
+		printf("Vararg is %s\n", vararg.fmt())
+	}
 	return
 }
 
-let name = input("What's your name?")
-print(name)
+print("Argument count", "Lucas", "Henrique", "Santana", "Marcelino", 20)

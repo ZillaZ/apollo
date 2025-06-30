@@ -15,6 +15,7 @@ pub struct TraitMethod {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Trait {
     pub name: String,
+    pub generics: Vec<String>,
     pub methods: Vec<TraitMethod>
 }
 
@@ -120,6 +121,9 @@ impl ToString for DataType {
         }
     }
 }
+
+#[derive(Clone, Debug, PartialEq)]
+struct VariadicValue(i32);
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ParameterType {
@@ -380,6 +384,7 @@ pub struct Function {
     pub args: Vec<Arg>,
     pub return_type: Option<Type>,
     pub block: Rc<RefCell<Block>>,
+    pub variadic_traits: Vec<String>
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -407,6 +412,7 @@ pub struct ImplMethod {
 pub struct Impl {
     pub trait_name: String,
     pub target_name: String,
+    pub generics: Vec<(String, String)>,
     pub methods: Vec<ImplMethod>,
 }
 
@@ -554,7 +560,8 @@ pub enum Expr {
     For(ForLoop),
     Impl(Impl),
     Enum(Enum),
-    Assembly(Assembly)
+    Assembly(Assembly),
+    VariadicBlock(Block)
 }
 
 impl Expr {
