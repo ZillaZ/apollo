@@ -14,7 +14,7 @@ use std::rc::Rc;
 pub struct Ast {
     pub namespace: String,
     pub expressions: Vec<Expr>,
-    pub imports: HashMap<Import, Rc<RefCell<Ast>>>,
+    pub imports: HashMap<(String, Import), Rc<RefCell<Ast>>>,
     pub context: AstContext,
 }
 
@@ -45,6 +45,7 @@ impl NoirParser {
         let mut context = AstContext::new();
         context.scope = "main".to_string();
         let expressions = self.build_expression(pairs, &mut context);
+        println!("Functions on scope {}: {:?}", namespace, context.functions.iter().map(|(name, _)| name).collect::<Vec<&String>>());
         let imports = expressions
             .iter()
             .filter(|x| match x {
@@ -67,7 +68,7 @@ impl NoirParser {
         &self,
         imports: &Vec<Import>,
         context: &mut AstContext,
-    ) -> HashMap<Import, Rc<RefCell<Ast>>> {
+    ) -> HashMap<(String, Import), Rc<RefCell<Ast>>> {
         let mut rtn = HashMap::new();
         for import in imports {
             let lib_paths = self.parse_import_path(&import);
@@ -77,12 +78,14 @@ impl NoirParser {
                 aux.pop();
                 aux.join("/")
             }) {
+                let new_name = lib_path.split("/").collect::<Vec<&str>>().join("::");
                 let lib_path = format!("{}.apo", lib_path);
                 println!("{lib_path}");
-                let input = std::fs::read_to_string(lib_path).unwrap();
+                let input = std::fs::read_to_string(lib_path.clone()).unwrap();
                 let mut pairs: Pairs<Rule> = Program::parse(Rule::program, &input).unwrap();
-                let ast = self.gen_ast(&mut pairs, import.namespace.name.clone());
-                rtn.insert(import.clone(), Rc::new(RefCell::new(ast)));
+                let ast = self.gen_ast(&mut pairs, new_name);
+
+                rtn.insert((lib_path, import.clone()), Rc::new(RefCell::new(ast)));
             }
         }
         rtn
@@ -274,12 +277,11 @@ impl NoirParser {
         let mut params = vec![];
         let mut datatype = None;
         let mut body = Block::default();
-        let mut variadic_traits = Vec::new();
         for pair in pairs {
             match pair.as_rule() {
                 Rule::name => name = pair.as_str().into(),
                 Rule::datatype => datatype = Some(self.build_datatype(&mut pair.into_inner(), context)),
-                Rule::args => (params, variadic_traits) = self.build_args(&mut pair.into_inner(), context),
+                Rule::args => params = self.build_args(&mut pair.into_inner(), context),
                 Rule::block => body = self.build_block(&mut pair.into_inner(), context),
                 _ => unreachable!()
             }
@@ -1007,7 +1009,6 @@ impl NoirParser {
                 expr: Vec::new(),
                 box_return: None,
             })),
-            variadic_traits: Vec::new()
         };
         let aux = context.scope.clone();
         for pair in pairs.clone() {
@@ -1017,7 +1018,7 @@ impl NoirParser {
                     function.name = self.build_name(&mut pair.into_inner(), context);
                     context.scope = function.name.name.clone();
                 }
-                Rule::args => (function.args, function.variadic_traits) = self.build_args(&mut pair.into_inner(), context),
+                Rule::args => function.args = self.build_args(&mut pair.into_inner(), context),
                 Rule::datatype => {
                     function.return_type =
                         Some(self.build_datatype(&mut pair.into_inner(), context))
@@ -1170,17 +1171,15 @@ impl NoirParser {
         }
     }
 
-    fn build_args(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> (Vec<Arg>, Vec<String>) {
+    fn build_args(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Vec<Arg> {
         let mut args = Vec::new();
-        let mut variadic_traits = Vec::new();
         for pair in pairs {
             match pair.as_rule() {
                 Rule::parameter => args.push(self.build_arg(&mut pair.into_inner(), context)),
-                Rule::variadic => pair.into_inner().for_each(|x| variadic_traits.push(x.as_str().to_string())),
                 rule => unreachable!("{:?}", rule),
             }
         }
-        (args, variadic_traits)
+        args
     }
 
     fn build_arg(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Arg {

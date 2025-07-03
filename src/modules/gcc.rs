@@ -132,12 +132,13 @@ pub enum Helper {
 pub struct GccContext<'a> {
     imports: HashSet<&'a str>,
     context: &'a Context<'a>,
+    functions_to_build: HashMap<String, structs::Function>
 }
 
 impl<'a> GccContext<'a> {
     pub fn new(context: &'a Context<'a>) -> Self {
         let imports = HashSet::new();
-        Self { imports, context }
+        Self { imports, context, functions_to_build: HashMap::new() }
     }
 
     fn gen_units(&'a self, memory: &mut Memory<'a>) {
@@ -695,19 +696,37 @@ impl<'a> GccContext<'a> {
         memory: &mut Memory<'a>,
         ast: &mut Ast,
     ) {
-        let imports = &mut ast.imports;
-        for (import, ref mut ast) in imports.iter_mut() {
-            if all_imports.contains(import.namespace.name.as_str()) {
-                continue;
+        fn recursive_descent(node: &structs::Namespace, acc: &mut Vec<String>, str_acc: String) {
+            for namespace in node.next.iter() {
+                let namespace = namespace.as_ref();
+                if !namespace.next.is_empty() {
+                    recursive_descent(namespace, acc, format!("{str_acc}::{}", namespace.name));
+                }else{
+                    let name = format!("{}::{}", str_acc, namespace.name.clone());
+                    if !acc.contains(&name) {
+                        acc.push(name);
+                    }
+                }
             }
-            all_imports.insert(import.namespace.name.clone());
-            let imported_ast = Rc::get_mut(ast).unwrap();
-            let mut new_memory = Memory::new(import.namespace.name.clone());
-            new_memory.datatypes = memory.datatypes.clone();
-            new_memory.structs = memory.structs.clone();
-            new_memory.field_types = memory.field_types.clone();
-            self.gen_bytecode(imported_ast.get_mut(), all_imports, &mut new_memory, false, false, false, "".into());
-            self.push_to_module(&import, memory, &mut new_memory);
+        }
+        let imports = &mut ast.imports;
+        for ((import_name, import), ref mut ast) in imports.iter_mut() {
+            let mut names = vec![];
+            recursive_descent(&import.namespace, &mut names, import.namespace.name.clone());
+            for name in names {
+                println!("Name is {name}");
+                if all_imports.contains(import_name) {
+                    continue;
+                }
+                all_imports.insert(import_name.clone());
+                let imported_ast = Rc::get_mut(ast).unwrap();
+                let mut new_memory = Memory::new(name.clone());
+                new_memory.datatypes = memory.datatypes.clone();
+                new_memory.structs = memory.structs.clone();
+                new_memory.field_types = memory.field_types.clone();
+                self.gen_bytecode(imported_ast.get_mut(), all_imports, &mut new_memory, false, false, false, "".into());
+                self.push_to_module(&import, memory, &mut new_memory);
+            }
         }
     }
 
@@ -732,10 +751,14 @@ impl<'a> GccContext<'a> {
         }
         let mut imports = vec![];
         recursive_descent(&import.namespace, &mut imports);
+        println!("Imports vec {:?}", imports);
+        new_memory.functions_with_traits.iter().for_each(|(name, function)| {
+            memory.functions_with_traits.insert(name.into(), function.clone());
+        });
         for ref import in imports {
             let name = import.split("::").last().unwrap();
-            println!("NAME {}", import);
             if let Some(function) = new_memory.functions.get(name) {
+                println!("Import {name}");
                 memory.functions.insert(import.into(), *function);
             }
             if let Some(datatype) = new_memory.datatypes.get(name) {
@@ -828,24 +851,27 @@ impl<'a> GccContext<'a> {
     fn add_builtin_functions(&'a self, memory: &mut Memory<'a>) {
         for i in 0..memory.builtins.len() {
             let name = &memory.builtins[i];
-            if name == "printf" {
-                let format = self.context.new_parameter(
-                    None,
-                    self.context.new_c_type(gccjit::CType::ConstCharPtr),
-                    "format",
-                );
-                let function = self.context.new_function(
-                    None,
-                    gccjit::FunctionType::Extern,
-                    <i32 as Typeable>::get_type(&self.context),
-                    &[format],
-                    "printf",
-                    true,
-                );
-                memory.functions.insert(name.clone(), function);
-            } else {
-                let function = self.context.get_builtin_function(name);
-                memory.functions.insert(name.clone(), function);
+            match name.as_str() {
+                "printf" => {
+                    let format = self.context.new_parameter(
+                        None,
+                        self.context.new_c_type(gccjit::CType::ConstCharPtr),
+                        "format",
+                    );
+                    let function = self.context.new_function(
+                        None,
+                        gccjit::FunctionType::Extern,
+                        <i32 as Typeable>::get_type(&self.context),
+                        &[format],
+                        "printf",
+                        true,
+                    );
+                    memory.functions.insert(name.clone(), function);
+                }
+                _ => {
+                    let function = self.context.get_builtin_function(name);
+                    memory.functions.insert(name.trim_start_matches("_").to_string(), function);
+                }
             }
         }
     }
@@ -1207,7 +1233,7 @@ impl<'a> GccContext<'a> {
         memory: &mut Memory<'a>,
         ast: &mut Ast,
     ) -> GccValues<'a> {
-        let mut aux = ast_block.to_ast();
+        let mut aux = ast_block.to_ast(ast.namespace.clone(), ast.context.clone());
         self.parse_expression(&mut aux, memory, new_block);
         aux.expressions = memory.block_tail_expr.make_contiguous().to_vec();
         memory.block_tail_expr.clear();
@@ -1244,14 +1270,13 @@ impl<'a> GccContext<'a> {
         params
     }
 
-    fn function_name(&'a self, traits: &Vec<&structs::Arg>, variadic_traits: Vec<String>, name: &String) -> String {
-        if traits.is_empty() && variadic_traits.is_empty() {
+    fn function_name(&'a self, traits: &Vec<&structs::Arg>, name: &String) -> String {
+        if traits.is_empty() {
             name.clone()
         }else{
             let traits = traits.iter().filter(|x| { if let ParameterType::Implements(_) = x.datatype { true } else { false }} ).map(|x| { let ParameterType::Implements(ref t) = x.datatype else { panic!(); }; (x.name.name.clone(), t) });
             let traits = traits.map(|(name, implements)| format!("{name}{}", implements.iter().fold(String::new(), |acc, elem| format!("{acc}{elem}"))));
-            let variadic = variadic_traits.iter().fold(format!("variadic{}", variadic_traits.len()), |acc, elem| format!("{acc}{elem}"));
-            format!("{}{}{}", name, traits.fold(String::new(), |acc, elem| format!("{acc}{elem}")), variadic)
+            format!("{}{}", name, traits.fold(String::new(), |acc, elem| format!("{acc}{elem}")))
         }
     }
 
@@ -1262,7 +1287,7 @@ impl<'a> GccContext<'a> {
         ast: &mut Ast,
     ) {
         let traits : Vec<&structs::Arg> = function.args.iter().filter(|x| { if let ParameterType::Implements(_) = x.datatype { true } else { false }} ).collect();
-        if !traits.is_empty() || !function.variadic_traits.is_empty() {
+        if !traits.is_empty() {
             memory.functions_with_traits.insert(function.name.name.clone(), function.clone());
             return;
         }
@@ -1281,7 +1306,7 @@ impl<'a> GccContext<'a> {
             return_type,
             params.as_slice(),
             &function.name.name,
-            false,
+            false
         );
         memory
             .function_addresses
@@ -1457,30 +1482,32 @@ impl<'a> GccContext<'a> {
         memory: &mut Memory<'a>,
         ast: &mut Ast,
     ) {
-        match declaration.value.as_mut().unwrap().value {
-            ValueEnum::Constructor(ref mut constructor) => {
-                let constructor = self.get_rc_value(constructor).unwrap();
-                let mut map = HashMap::new();
-                map.insert(declaration.name.name.clone(), constructor.name.clone());
-                memory
-                    .constructors
-                    .insert(memory.function_scope.clone(), map);
-            }
-            ValueEnum::Call(ref call) => {
-                if let Some(function) = ast.context.functions.get(&call.name.name) {
-                    if let Some(ref function_return) = function.return_type {
-                        if let DataType::StructType(ref name) = function_return.datatype {
-                            let mut map = HashMap::new();
-                            map.insert(declaration.name.name.clone(), name.clone());
-                            memory
-                                .constructors
-                                .insert(memory.function_scope.clone(), map);
+        if let Some(ref mut value) = declaration.value {
+            match value.value {
+                ValueEnum::Constructor(ref mut constructor) => {
+                    let constructor = self.get_rc_value(constructor).unwrap();
+                    let mut map = HashMap::new();
+                    map.insert(declaration.name.name.clone(), constructor.name.clone());
+                    memory
+                        .constructors
+                        .insert(memory.function_scope.clone(), map);
+                }
+                ValueEnum::Call(ref call) => {
+                    if let Some(function) = ast.context.functions.get(&call.name.name) {
+                        if let Some(ref function_return) = function.return_type {
+                            if let DataType::StructType(ref name) = function_return.datatype {
+                                let mut map = HashMap::new();
+                                map.insert(declaration.name.name.clone(), name.clone());
+                                memory
+                                    .constructors
+                                    .insert(memory.function_scope.clone(), map);
+                            }
                         }
                     }
                 }
-            }
-            _ => (),
-        };
+                _ => (),
+            };
+        }
         let value = if let Some(ref mut value) = declaration.value {
             Some(self.parse_value(value, block, memory, ast))
         } else {
@@ -1572,7 +1599,7 @@ impl<'a> GccContext<'a> {
         args.extend(partial_args);
         let mut fn_name = call.name.name.clone();
         let to_impl = if let Some(to_impl) = memory.impl_with_traits.get(&call.name.name) {
-            fn_name = self.function_name(&to_impl.1.params.iter().collect(), vec![], &call.name.name);
+            fn_name = self.function_name(&to_impl.1.params.iter().collect(), &call.name.name);
             Some(to_impl.clone())
         }else{
             None
@@ -1654,40 +1681,42 @@ impl<'a> GccContext<'a> {
                 self.size_of(&args[0], memory),
             ));
         }
+        if call.name.name == "start_va" {
+            let function = block.get_function();
+            let last_fixed = function.get_param(std::cmp::max(1, function.get_param_count() as i32) - 1);
+            let last_fixed_type = last_fixed.to_rvalue().get_type().get_aligned(8);
+            let addr_type = memory.datatypes.get("ui8").unwrap();
+            let offset = self.context.new_bitcast(None, last_fixed.to_lvalue().get_address(None), *addr_type);
+            let offset = self.context.new_binary_op(None, BinaryOp::Plus, offset.get_type(), offset, self.context.new_rvalue_from_int(offset.get_type(), last_fixed_type.get_size() as i32));
+            let variables = memory.variables.entry(memory.function_scope.clone()).or_insert(HashMap::new());
+            let varargs = variables.get("varargs").unwrap();
+            block.add_assignment(None, *varargs, self.context.new_bitcast(None, offset, varargs.to_rvalue().get_type()));
+            return GccValues::L(*varargs);
+        }
         if let Some(field) = field {
             return self.parse_impl_call(args, call, field, block, memory, ast);
         }
         let mut fn_name = call.name.name.clone();
-        let helper = if let Some(function) = ast.context.functions.get(&fn_name) {
-            function.variadic_traits.clone()
-        }else{
-            vec![]
-        };
+
         let mut to_impl = if let Some(to_impl) = memory.functions_with_traits.get(&fn_name) {
-            fn_name = self.function_name(&to_impl.args.iter().collect(), helper.clone(), &call.name.name);
+            fn_name = self.function_name(&to_impl.args.iter().collect(), &call.name.name);
             Some(to_impl.clone())
         }else{
             None
         };
         if let Some(ref to_impl) = to_impl {
-            fn_name = self.function_name(&to_impl.args.iter().collect(), helper, &call.name.name);
+            fn_name = self.function_name(&to_impl.args.iter().collect(), &call.name.name);
         }
         if !memory.functions.contains_key(&fn_name) && to_impl.is_none() {
             let mut function = ast
                 .context
                 .functions
-                .get_mut(&call.name.name)
-                .expect("Couldn't find function")
+                .get_mut(&fn_name)
+                .expect(&format!("Couldn't find function {} on module {}", fn_name, ast.namespace))
                 .clone();
             self.parse_function(&mut function, memory, ast);
         }else if let Some(ref mut to_impl) = to_impl {
-            let variadic_args = if !to_impl.variadic_traits.is_empty() {
-                args[to_impl.args.len()..].iter().map(|_| structs::Arg { name: Name { name: self.uuid(), op: None, op_count: 0 }, datatype: structs::ParameterType::Implements(to_impl.variadic_traits.clone()) }).collect::<Vec<structs::Arg>>()
-            }else{
-                vec![]
-            };
-            println!("ARGS: {:?}\nDECL_ARGS: {:?}\nVARIADICS: {:?}", args, to_impl.args, variadic_args.iter().map(|x| x.name.name.clone()).collect::<Vec<String>>());
-            let params = self.build_impl_params(args.clone(), vec![to_impl.args.clone(), variadic_args.clone()].into_iter().flatten().collect(), memory, call.name.name.clone());
+            let params = self.build_impl_params(args.clone(), to_impl.args.clone(), memory, call.name.name.clone());
             let mut vars = HashMap::new();
             for i in 0..to_impl.args.len() {
                 vars.insert(to_impl.args[i].name.name.clone(), params[i]);
@@ -1698,13 +1727,11 @@ impl<'a> GccContext<'a> {
                 <() as Typeable>::get_type(self.context)
             };
             let function = self.context.new_function(None, gccjit::FunctionType::Internal, datatype, &params, fn_name.clone(), false);
-            let uint_type = memory.datatypes.get("i4").unwrap();
-            memory.variadic_args.insert(function, params[to_impl.args.len()..].to_vec()) ;
             let entry = memory.variables.entry(fn_name.clone()).or_insert(vars.iter().map(|x| (x.0.clone(), x.1.to_lvalue())).collect());
-            let variadic = function.new_local(None, *uint_type, "variadic");
+            let last_param = function.get_param(function.get_param_count() as i32);
+            entry.insert("#offset".into(), last_param.to_lvalue());
+            memory.variadic_args.insert(function, params[to_impl.args.len()..].to_vec()) ;
             let mut new_block = function.new_block(self.uuid());
-            new_block.add_assignment(None, variadic, self.context.new_rvalue_from_int(*uint_type, variadic_args.len() as i32));
-            entry.insert("variadic".into(), variadic);
             let mut rc = self.get_rc_value(&mut to_impl.block).unwrap();
             let copy = memory.function_scope.clone();
             memory.function_scope = fn_name.clone();

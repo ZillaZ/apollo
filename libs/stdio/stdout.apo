@@ -1,0 +1,22 @@
+use std::strings { strings::Display strings::len }
+
+fn println(input: &string, count: i4) {
+	let size = 0
+	for i in (0..count) {
+		size += strings::len(input[i])
+	}
+	size += count + 1
+	let value : &char = malloc(size)
+	printf("Size is %d\n", size)
+	let offset = 0
+	for i in (0..count) {
+		let data = input[i]
+		let len = strings::len(data)
+		memcpy(&value[offset], data, len)
+		value[offset + len] = ' '
+		offset += len + 1
+	}
+	value[size] = '\0'
+	printf("%s", value)
+	return
+}

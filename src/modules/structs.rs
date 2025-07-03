@@ -330,16 +330,16 @@ pub struct Block {
 }
 
 impl Block {
-    pub fn to_ast(&mut self) -> Ast {
+    pub fn to_ast(&mut self, namespace: String, context: AstContext) -> Ast {
         Ast {
-            namespace: "nil".into(),
+            namespace,
+            context,
             expressions: self
                 .expr
                 .iter_mut()
                 .map(|x| Rc::make_mut(x).get_mut().clone())
                 .collect::<Vec<_>>(),
             imports: std::collections::HashMap::new(),
-            context: AstContext::new(),
         }
     }
     pub fn default() -> Block {
@@ -384,7 +384,6 @@ pub struct Function {
     pub args: Vec<Arg>,
     pub return_type: Option<Type>,
     pub block: Rc<RefCell<Block>>,
-    pub variadic_traits: Vec<String>
 }
 
 #[derive(Clone, Debug, PartialEq)]
