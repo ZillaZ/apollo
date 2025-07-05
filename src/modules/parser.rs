@@ -408,19 +408,46 @@ impl NoirParser {
     fn build_struct(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> StructDecl {
         let mut name = String::new();
         let mut fields = Vec::new();
+        let mut attributes = Vec::new();
         for pair in pairs {
             match pair.as_rule() {
                 Rule::name_str => name = pair.as_str().into(),
                 Rule::field_decl => fields.push(self.build_field_decl(&mut pair.into_inner(), context)),
+                Rule::attributes => attributes = self.parse_attributes(&mut pair.into_inner(), context),
                 rule => unreachable!("Rule {:?}", rule),
             }
         }
         let r#struct = StructDecl {
             name: name.clone(),
-            fields
+            fields,
+            attributes
         };
         context.structs.insert(name, r#struct.clone());
         r#struct
+    }
+
+    fn parse_attributes(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Vec<Attribute> {
+        let mut rtn = Vec::new();
+        for pair in pairs {
+            match pair.as_rule() {
+                Rule::attribute => rtn.push(self.parse_attribute(&mut pair.into_inner(), context)),
+                _ => unreachable!()
+            }
+        }
+        rtn
+    }
+
+    fn parse_attribute(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Attribute {
+        let mut name = String::new();
+        let mut value = ValueEnum::Int(0);
+        for mut pair in pairs {
+            match pair.as_rule() {
+                Rule::name_str => name = pair.as_str().into(),
+                Rule::bvalue | Rule::base_value | Rule::binary_operation | Rule::unary_operation => value = self.build_single_value(&mut pair, context).value,
+                _ => unreachable!()
+            }
+        }
+        Attribute { name, value }
     }
 
     fn build_import(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Import {
@@ -667,33 +694,55 @@ impl NoirParser {
                     }
                     value.value = ValueEnum::Enum(Rc::new(RefCell::new(EnumValue { datatype, variant, inner })))
                 }
+                Rule::closure => {
+                    value.value = ValueEnum::Closure(Rc::new(RefCell::new(self.build_closure(&mut eval.into_inner(), context))));
+                }
                 rule => unreachable!("Fucked up rule is {:?}", rule),
             };
         }
         value
     }
 
+    fn build_closure(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Closure {
+        let mut args = Vec::new();
+        let mut block = Block::default();
+        for pair in pairs {
+            match pair.as_rule() {
+                Rule::name_str => args.push(pair.as_str().to_string()),
+                Rule::block => block = self.build_block(&mut pair.into_inner(), context),
+                _ => unreachable!()
+            }
+        }
+        Closure { args, block: Rc::new(RefCell::new(block)) }
+    }
+
     fn build_binary_op(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Value {
         fn bop_helper(lhs: Value, op: Pair<'_, Rule>, rhs: Value) -> Value {
             Value::non_heap(ValueEnum::BinaryOp(Rc::new(RefCell::new(BinaryOp { lhs: Rc::new(RefCell::new(lhs)), op: Operations::from(op), rhs: Rc::new(RefCell::new(rhs)) }))))
-        }
-        fn unop_helper(value: Value, op: Pair<'_, Rule>) -> Value {
-            Value::non_heap(ValueEnum::UnaryOp(Rc::new(RefCell::new(UnaryOp { prefix: Operations::from(op), value: Rc::new(RefCell::new(value)) }))))
         }
 
         self.pratt_parser.map_primary(|mut primary| match primary.as_rule() {
             Rule::bvalue | Rule::base_value | Rule::binary_operation | Rule::unary_operation => self.build_single_value(&mut primary, context),
             _ => unreachable!()
         }).map_infix(|lhs, op, rhs| bop_helper(lhs, op, rhs))
-          .map_prefix(|prefix, value| unop_helper(value, prefix))
           .parse(pairs)
+    }
+
+    fn build_unary_op(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Value {
+        fn unop_helper(value: Value, op: Pair<'_, Rule>) -> Value {
+            Value::non_heap(ValueEnum::UnaryOp(Rc::new(RefCell::new(UnaryOp { prefix: Operations::from(op), value: Rc::new(RefCell::new(value)) }))))
+        }
+        let op = pairs.next().unwrap();
+        let value = self.build_single_value(&mut pairs.next().unwrap(), context);
+        unop_helper(value, op)
     }
 
     fn build_value(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Value {
         let mut peekable = pairs.peekable();
         let pair = peekable.peek().unwrap();
         match pair.as_rule() {
-            Rule::unary_operation | Rule::binary_operation => self.build_binary_op(&mut pair.clone().into_inner(), context),
+            Rule::unary_operation => self.build_unary_op(&mut pair.clone().into_inner(), context),
+            Rule::binary_operation => self.build_binary_op(&mut pair.clone().into_inner(), context),
             Rule::bvalue => self.build_bvalue(&mut pair.clone().into_inner(), context),
             Rule::base_value => self.build_base(&mut pair.clone().into_inner(), context),
             rule => unreachable!("Found rule {:?} while building value", rule),
@@ -869,22 +918,23 @@ impl NoirParser {
     }
 
     fn build_array(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Array {
-        let mut datatype = Type {
-            is_ref: false,
-            ref_count: 0,
-            datatype: DataType::Int(4),
+        let mut datatype = ArrayType {
+            size: Value::non_heap(ValueEnum::Int(0)),
+            data_type: Type { is_ref: false, ref_count: 0, datatype: DataType::Int(4) },
         };
         let mut elements = Vec::new();
         for pair in pairs {
             match pair.as_rule() {
-                Rule::datatype => datatype = self.build_datatype(&mut pair.into_inner(), context),
-                Rule::binary_op => {
+                Rule::array_type => datatype = self.build_array_type(&mut pair.into_inner(), context),
+                Rule::bvalue | Rule::base_value | Rule::unary_op | Rule::binary_op => {
                     let element = self.build_binary_op(&mut pair.into_inner(), context);
                     elements.push(element);
                 }
                 rule => unreachable!("Found rule {:?} while building array", rule),
             }
         }
+        datatype.size = Value::non_heap(ValueEnum::Int(elements.len() as i32));
+        let datatype = Type { is_ref: false, ref_count: 0, datatype: DataType::Array(Rc::new(RefCell::new(datatype))) };
         Array { datatype, elements }
     }
 
@@ -893,7 +943,7 @@ impl NoirParser {
         let mut data_type = Type::default();
         for pair in pairs {
             match pair.as_rule() {
-                Rule::binary_op => size = self.build_binary_op(&mut pair.into_inner(), context),
+                Rule::bvalue | Rule::base_value | Rule::unary_op | Rule::binary_op => size = self.build_binary_op(&mut pair.into_inner(), context),
                 Rule::datatype => data_type = self.build_datatype(&mut pair.into_inner(), context),
                 rule => unreachable!("Found {:?} while building array type", rule),
             }
@@ -1071,17 +1121,11 @@ impl NoirParser {
             datatype: None,
             value: None,
         };
-        for pair in pairs {
+        for mut pair in pairs {
             match pair.as_rule() {
                 Rule::name => declaration.name = self.build_name(&mut pair.into_inner(), context),
-                Rule::binary_operation => {
-                    declaration.value = Some(self.build_binary_op(&mut pair.into_inner(), context))
-                }
-                Rule::bvalue => {
-                    declaration.value = Some(self.build_bvalue(&mut pair.into_inner(), context))
-                }
-                Rule::base_value => {
-                    declaration.value = Some(self.build_base(&mut pair.into_inner(), context))
+                Rule::bvalue | Rule::base_value | Rule::binary_operation | Rule::unary_operation => {
+                    declaration.value = Some(self.build_single_value(&mut pair, context))
                 }
                 Rule::datatype => {
                     declaration.datatype =

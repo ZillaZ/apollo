@@ -1,0 +1,23 @@
+fn mmap(size: ui8, prot: ui8, flags: ui8) -> Any {
+	let dest : Any
+	let addr = dest as ui8
+	let fd : i8 = 1 - 2
+	let result : ui8 = 0
+	#asm {
+"
+mov %1, %%rdi
+mov %2, %%rsi
+mov %3, %%rdx
+mov %4, %%r10
+mov %5, %%r8
+xor %%r10, %%r10
+mov $9, %%rax
+syscall
+"
+		:in { ("r" addr) ("r" size) ("r" prot) ("r" flags) ("r" fd) }
+		:out { ("=a" result) }
+		:clob { "rdi" "rsi" "r10" "r9" "r10" "memory" }
+	}
+	printf("Result %d\n", result)
+	return dest
+}

@@ -211,9 +211,16 @@ pub struct FieldDecl {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct Attribute {
+    pub name: String,
+    pub value: ValueEnum
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct StructDecl {
     pub name: String,
-    pub fields: Vec<FieldDecl>
+    pub fields: Vec<FieldDecl>,
+    pub attributes: Vec<Attribute>
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -271,7 +278,7 @@ pub enum ValueEnum {
     Int(i32),
     UInt(u32),
     Float(f32),
-    Block(Rc<RefCell<Block>>),
+    Closure(Rc<RefCell<Closure>>),
     Name(Name),
     Bool(bool),
     If(If),
@@ -375,6 +382,12 @@ impl FunctionKind {
             Native => FunctionType::Internal,
         }
     }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Closure {
+    pub args: Vec<String>,
+    pub block: Rc<RefCell<Block>>
 }
 
 #[derive(Clone, Debug, PartialEq)]

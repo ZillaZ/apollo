@@ -1,4 +1,7 @@
 use std::stdio { stdin::read_line stdout::println }
+use std::threads::threads::sleep
 
 let name = stdin::read_line()
-stdout::println(1, name)
+threads::sleep(5, 0)
+let out = array(string)[name.fmt(), "Henrique", "Santana", "Marcelino"]
+stdout::println(out, 4)

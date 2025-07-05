@@ -31,6 +31,7 @@ pub struct Memory<'a> {
     pub functions_with_traits: HashMap<String, AstFunction>,
     pub impl_with_traits: HashMap<String, (String, ImplMethod)>,
     pub variadic_args: HashMap<Function<'a>, Vec<Parameter<'a>>>,
+    pub closures: HashMap<RValue<'a>, Function<'a>>,
     pub should_delay_ref_ops: bool
 }
 
@@ -69,6 +70,7 @@ impl<'a> Memory<'a> {
             functions_with_traits: HashMap::new(),
             impl_with_traits: HashMap::new(),
             variadic_args: HashMap::new(),
+            closures: HashMap::new(),
             should_delay_ref_ops: false
         }
     }

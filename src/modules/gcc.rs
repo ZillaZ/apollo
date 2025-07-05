@@ -5,6 +5,7 @@ use gccjit::{
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
+use std::sync::Arc;
 
 use super::memory::Memory;
 use super::parser::Ast;
@@ -178,7 +179,7 @@ impl<'a> GccContext<'a> {
     }
 
     fn is_pointer(&'a self, r#type: &Type<'a>, memory: &mut Memory<'a>) -> bool {
-        memory.pointer_types.contains(r#type)
+        r#type.get_pointee().is_some()
     }
 
     fn gen_text_types(&'a self, memory: &mut Memory<'a>) {
@@ -675,15 +676,27 @@ impl<'a> GccContext<'a> {
         let mut counter = 0;
         let mut new_struct = HashMap::new();
 
+
         for field in r#struct.fields.iter_mut() {
             new_struct.insert(field.name.clone(), counter);
             counter += 1;
             let field = self.parse_field(field, memory);
             fields.push(field);
         }
-        let struct_type =
+        let mut struct_type =
             self.context
                 .new_struct_type(None, r#struct.name.clone(), &fields.as_slice());
+
+        for attribute in r#struct.attributes.iter() {
+            match attribute.name.as_str() {
+                "alignment" => {
+                    let ValueEnum::Int(bytes) = attribute.value else { panic!() };
+                    let aligned = struct_type.as_type().get_aligned(bytes as u64);
+                    struct_type = aligned.is_struct().unwrap();
+                },
+                _ => continue
+            }
+        }
         memory.structs.insert(struct_type, new_struct);
         memory
             .datatypes
@@ -752,8 +765,12 @@ impl<'a> GccContext<'a> {
         let mut imports = vec![];
         recursive_descent(&import.namespace, &mut imports);
         println!("Imports vec {:?}", imports);
-        new_memory.functions_with_traits.iter().for_each(|(name, function)| {
-            memory.functions_with_traits.insert(name.into(), function.clone());
+        new_memory.impls.iter().for_each(|(dt, map)| {
+            memory.impls.insert(*dt, map.clone());
+        });
+        new_memory.impl_methods.iter().for_each(|(name, function)| {
+            println!("pushing {name} to {}", memory.name);
+            memory.impl_methods.insert(name.into(), function.clone());
         });
         for ref import in imports {
             let name = import.split("::").last().unwrap();
@@ -942,6 +959,19 @@ impl<'a> GccContext<'a> {
             }
             ValueEnum::Enum(ref mut enum_value) => {
                 self.parse_enum_value(enum_value, block, memory, ast)
+            }
+            ValueEnum::Closure(ref mut closure) => {
+                let closure = closure.borrow_mut();
+                let variables = memory.variables.get(&memory.function_scope).unwrap();
+                let args = closure.args.iter().map(|x| (variables.get(x).unwrap(), x)).collect::<Vec<(&LValue<'_>, &String)>>();
+                let params = args.iter().map(|(lvalue, name)| self.context.new_parameter(None, lvalue.to_rvalue().get_type(), name)).collect::<Vec<Parameter<'_>>>();
+                let fn_name = self.uuid().chars().filter(|x| *x != '-').collect::<String>();
+                let function = self.context.new_function(None, gccjit::FunctionType::Internal, <() as Typeable>::get_type(self.context), &params, format!("closure_{fn_name}"), false);
+                let mut new_block = function.new_block(self.uuid());
+                let mut block = closure.block.borrow_mut();
+                self.parse_block(&mut block, &mut new_block, memory, ast);
+                memory.closures.insert(function.get_address(None), function);
+                GccValues::R(function.get_address(None))
             }
             ref val => unreachable!("Found value enum {:?} while parsing value", val),
         };
@@ -1348,7 +1378,7 @@ impl<'a> GccContext<'a> {
         let r#type = match datatype.datatype {
             DataType::Bool => <bool as Typeable>::get_type(self.context),
             DataType::Int(bytecount) => *memory.datatypes.get(&format!("i{}", bytecount)).unwrap(),
-            DataType::UInt(bytecount) => *memory.datatypes.get(&format!("u{}", bytecount)).unwrap(),
+            DataType::UInt(bytecount) => *memory.datatypes.get(&format!("ui{}", bytecount)).unwrap(),
             DataType::Array(ref mut array_type) => {
                 let mut array_type = self.get_rc_value(array_type).unwrap();
                 match array_type.size.value {
@@ -1559,11 +1589,7 @@ impl<'a> GccContext<'a> {
             }
             total_size + alignment
         } else {
-            if memory.pointer_types.get(&dt).is_some() {
-                8
-            } else {
-                dt.get_size() as i32
-            }
+            dt.get_size() as i32
         };
         size + alignment
     }
@@ -1708,13 +1734,17 @@ impl<'a> GccContext<'a> {
             fn_name = self.function_name(&to_impl.args.iter().collect(), &call.name.name);
         }
         if !memory.functions.contains_key(&fn_name) && to_impl.is_none() {
-            let mut function = ast
+            let function = ast
                 .context
                 .functions
-                .get_mut(&fn_name)
-                .expect(&format!("Couldn't find function {} on module {}", fn_name, ast.namespace))
-                .clone();
-            self.parse_function(&mut function, memory, ast);
+                .get(&fn_name);
+            if let Some(function) = function {
+                let mut function = function.clone();
+                self.parse_function(&mut function, memory, ast);
+            }else{
+                let function_ptr = memory.variables.get(&memory.function_scope).unwrap().get(&fn_name).unwrap();
+                self.context.new_call_through_ptr(None, function_ptr.to_rvalue(), args.iter().map(|x| x.rvalue()).collect::<Vec<_>>().as_slice());
+            }
         }else if let Some(ref mut to_impl) = to_impl {
             let params = self.build_impl_params(args.clone(), to_impl.args.clone(), memory, call.name.name.clone());
             let mut vars = HashMap::new();
@@ -1772,6 +1802,8 @@ impl<'a> GccContext<'a> {
         if left_type.is_compatible_with(rtn.get_type()) {
             return rtn;
         }
+        let left_is_ptr = self.is_pointer(&left_type, memory);
+        let right_is_ptr = self.is_pointer(&rtn.get_type(), memory);
         if !left_type.is_compatible_with(rtn.get_type())
             && left_type.is_compatible_with(*memory.datatypes.get("Any").unwrap())
             && !self.is_pointer(&rtn.get_type(), memory)
@@ -1779,6 +1811,8 @@ impl<'a> GccContext<'a> {
             rtn = self
                 .context
                 .new_cast(None, right.get_reference(), left_type);
+        } else if !left_type.is_compatible_with(rtn.get_type()) && ((left_is_ptr && !right_is_ptr) || (!left_is_ptr && right_is_ptr)) {
+            rtn = self.context.new_bitcast(None, right.get_reference(), left_type);
         } else if !left_type.is_compatible_with(rtn.get_type()) {
             rtn = self.context.new_cast(None, rtn, left_type);
         }
@@ -1905,6 +1939,7 @@ impl<'a> GccContext<'a> {
                 self.access_name(var, name)
             }
         } else if let Some(address) = memory.function_addresses.get(&name.name) {
+            println!("TYPE IS {:?}", address.to_rvalue().get_type());
             GccValues::R(*address)
         } else {
             panic!(
