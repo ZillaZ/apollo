@@ -1,46 +1,9 @@
 use std::mem::allocations::mmap
 
-#[alignment(8)]
-struct CloneArgs {
-flags: ui8
-pidfd: ui8
-child_tid: ui8
-parent_tid: ui8
-exit_signal: ui8
-stack: ui8
-stack_size: ui8
-tls: ui8
-set_tid: ui8
-set_tid_size: ui8
-cgroup: ui8
-}
-
-
 struct KernelTimespec {
 tv_sec: ui8
 tv_nsec: ui8
 }
-
-fn spawn(function: Any, args: Any) -> i4 {
-	let stack_size : ui8 = 1024 * 1024
-	let stack = allocations::mmap(stack_size, 3, 22)
-	let pid : ui8 = 0
-	#asm {
-"
-xor %%rdi, %%rdi
-mov $0x39, %%rax
-syscall
-"
-		:out { ("=a" pid ) }
-		:clob { "rdi" }}
-	if pid == 0 {
-		function(args)
-	}else{
-		printf("Main process %d\n", pid)
-	}
-	return 0
-}
-
 
 fn sleep(seconds: ui8, nanos: ui8) {
 	let time = new KernelTimespec {
@@ -62,6 +25,21 @@ syscall
 		:out { ("=a" result) }
 		:clob { "rdi" "rsi" "memory" }
 	}
-	printf("sleeping %d\n", result)
 	return
+}
+
+#[expandable(head)]
+fn fork(){
+	let pid : ui8 = 0
+	#asm {
+"
+xor %%rdi, %%rdi
+mov $0x39, %%rax
+syscall
+"
+		:out { ("=a" pid ) }
+		:clob { "rdi" }}
+	if pid != 0 {
+		return
+	}
 }

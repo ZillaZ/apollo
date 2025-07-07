@@ -1,4 +1,4 @@
-use pest::iterators::Pair;
+use pest::iterators::{Pair, Pairs};
 
 use crate::Rule;
 
@@ -42,7 +42,7 @@ impl From<Pair<'_, Rule>> for Operations {
         use Operations::*;
         match value.as_rule() {
             Rule::add => Add,
-            Rule::sub => Sub,
+            Rule::neg | Rule::sub => Sub,
             Rule::mul => Mul,
             Rule::div => Div,
             Rule::cmp_eq => Eq,
@@ -88,6 +88,73 @@ impl Default for Type {
             datatype: DataType::Int(0),
         }
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum ExpandSection {
+    Head,
+    Tail
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum OsVariant {
+    Windows,
+    Linux
+}
+
+impl OsVariant {
+    pub fn is(&self, variant_str: &str) -> bool {
+        variant_str == match self {
+            OsVariant::Windows => "windows",
+            OsVariant::Linux => "linux"
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Condition {
+    Os(OsVariant)
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum MacroKind {
+    Expand(ExpandSection),
+    Align(usize),
+    Conditional(Condition)
+}
+
+impl From<&mut Pairs<'_, Rule>> for MacroKind {
+    fn from(pairs: &mut Pairs<Rule>) -> Self {
+        let pair = pairs.next().unwrap();
+        let next = pairs.next().unwrap().into_inner().next().unwrap();
+        match pair.as_rule() {
+            Rule::name_str => {
+                match pair.as_str() {
+                    "expandable" => MacroKind::Expand(match next.as_str() {
+                        "head" => ExpandSection::Head,
+                        "tail" => ExpandSection::Tail,
+                        _ => unreachable!()
+                    }),
+                    "condition" => MacroKind::Conditional(match next.as_str() {
+                        "os" => Condition::Os(match next.into_inner().next().unwrap().as_str() {
+                            "windows" => OsVariant::Windows,
+                            "linux" => OsVariant::Linux,
+                            _ => unreachable!()
+                        }),
+                        _ => unreachable!()
+                    }),
+                    "alignment" => MacroKind::Align(next.as_str().parse::<usize>().unwrap()),
+                    rule => unreachable!("Found {rule}")
+                }
+            }
+            _ => unreachable!()
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Macro {
+    pub macros: Vec<MacroKind>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -557,6 +624,7 @@ pub struct Assembly {
 pub enum Expr {
     Return(Return),
     Call(Call),
+    MacroCall(Call),
     Function(Function),
     Block(Block),
     Declaration(Declaration),
@@ -573,7 +641,8 @@ pub enum Expr {
     Impl(Impl),
     Enum(Enum),
     Assembly(Assembly),
-    VariadicBlock(Block)
+    VariadicBlock(Block),
+    Macro(Macro)
 }
 
 impl Expr {

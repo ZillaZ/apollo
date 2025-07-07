@@ -1,5 +1,5 @@
 use gccjit::{Block, Field, Function, LValue, Parameter, RValue, Struct, Type};
-use super::structs::{Expr, Trait, Function as AstFunction, ImplMethod};
+use super::structs::{ExpandSection, Expr, Function as AstFunction, ImplMethod, Macro, Trait};
 use std::collections::{HashMap, HashSet, VecDeque};
 
 pub struct Memory<'a> {
@@ -31,7 +31,8 @@ pub struct Memory<'a> {
     pub functions_with_traits: HashMap<String, AstFunction>,
     pub impl_with_traits: HashMap<String, (String, ImplMethod)>,
     pub variadic_args: HashMap<Function<'a>, Vec<Parameter<'a>>>,
-    pub closures: HashMap<RValue<'a>, Function<'a>>,
+    pub macros: Vec<Macro>,
+    pub expandable_macros: HashMap<String, (ExpandSection, AstFunction)>,
     pub should_delay_ref_ops: bool
 }
 
@@ -70,7 +71,8 @@ impl<'a> Memory<'a> {
             functions_with_traits: HashMap::new(),
             impl_with_traits: HashMap::new(),
             variadic_args: HashMap::new(),
-            closures: HashMap::new(),
+            macros: Vec::new(),
+            expandable_macros: HashMap::new(),
             should_delay_ref_ops: false
         }
     }

@@ -123,6 +123,7 @@ impl NoirParser {
             let expr = match pair.as_rule() {
                 Rule::r#return => Expr::Return(self.build_return(&mut pair.into_inner(), context)),
                 Rule::call => Expr::Call(self.build_call(&mut pair.into_inner(), context)),
+                Rule::macro_call => Expr::MacroCall(self.build_call(&mut pair.into_inner(), context)),
                 Rule::function => {
                     Expr::Function(self.build_function(&mut pair.into_inner(), context))
                 }
@@ -154,12 +155,24 @@ impl NoirParser {
                 Rule::r#enum => Expr::Enum(self.build_enum(&mut pair.into_inner(), context)),
                 Rule::assembly => Expr::Assembly(self.build_assembly(&mut pair.into_inner(), context)),
                 Rule::variadic_block => Expr::VariadicBlock(self.build_block(&mut pair.into_inner(), context)),
+                Rule::r#macro => Expr::Macro(self.build_macro(&mut pair.into_inner(), context)),
                 Rule::EOI => continue,
                 rule => unreachable!("{:?}", rule),
             };
             expressions.push(expr);
         }
         expressions
+    }
+
+    fn build_macro(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Macro {
+        let mut macros = Vec::new();
+        for pair in pairs {
+            match pair.as_rule() {
+                Rule::attribute => macros.push(self.build_macro_attribute(&mut pair.into_inner(), context)),
+                _ => unreachable!()
+            }
+        }
+        Macro { macros }
     }
 
     fn build_assembly(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Assembly {
@@ -413,7 +426,6 @@ impl NoirParser {
             match pair.as_rule() {
                 Rule::name_str => name = pair.as_str().into(),
                 Rule::field_decl => fields.push(self.build_field_decl(&mut pair.into_inner(), context)),
-                Rule::attributes => attributes = self.parse_attributes(&mut pair.into_inner(), context),
                 rule => unreachable!("Rule {:?}", rule),
             }
         }
@@ -426,28 +438,8 @@ impl NoirParser {
         r#struct
     }
 
-    fn parse_attributes(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Vec<Attribute> {
-        let mut rtn = Vec::new();
-        for pair in pairs {
-            match pair.as_rule() {
-                Rule::attribute => rtn.push(self.parse_attribute(&mut pair.into_inner(), context)),
-                _ => unreachable!()
-            }
-        }
-        rtn
-    }
-
-    fn parse_attribute(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Attribute {
-        let mut name = String::new();
-        let mut value = ValueEnum::Int(0);
-        for mut pair in pairs {
-            match pair.as_rule() {
-                Rule::name_str => name = pair.as_str().into(),
-                Rule::bvalue | Rule::base_value | Rule::binary_operation | Rule::unary_operation => value = self.build_single_value(&mut pair, context).value,
-                _ => unreachable!()
-            }
-        }
-        Attribute { name, value }
+    fn build_macro_attribute(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> MacroKind {
+        MacroKind::from(pairs)
     }
 
     fn build_import(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Import {
@@ -476,7 +468,8 @@ impl NoirParser {
 
     fn build_single_value(&self, pair: &mut Pair<Rule>, context: &mut AstContext) -> Value {
         match pair.as_rule() {
-            Rule::unary_operation | Rule::binary_operation => self.build_binary_op(&mut pair.clone().into_inner(), context),
+            Rule::unary_operation => self.build_unary_op(&mut pair.clone().into_inner(), context),
+            Rule::binary_operation => self.build_binary_op(&mut pair.clone().into_inner(), context),
             Rule::bvalue => self.build_bvalue(&mut pair.clone().into_inner(), context),
             Rule::base_value => self.build_base(&mut pair.clone().into_inner(), context),
             rule => unreachable!("Found rule {:?} while building single value", rule),
@@ -1038,7 +1031,7 @@ impl NoirParser {
                 Rule::name => call.name = self.build_name(&mut pair.into_inner(), context),
                 Rule::arg => call
                     .args
-                    .push(self.build_value(&mut pair.into_inner(), context)),
+                    .push(self.build_single_value(&mut pair.into_inner().next().unwrap(), context)),
                 rule => unreachable!("Found rule {:?}", rule),
             }
         }

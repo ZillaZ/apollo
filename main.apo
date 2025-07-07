@@ -1,7 +1,15 @@
-use std { stdio::stdout::println }
+use std { threads::threads { fork sleep } }
 
-let a = || {
+fn hello(name: string) {
+	printf("Hello, %s!\n", name)
 	return
 }
 
-printf("a is %d\n", a)
+let args = -1
+let name = "Lucas"
+hello(name)
+threads::fork!(||{
+	let name = "Child"
+	hello(name)
+	return
+})

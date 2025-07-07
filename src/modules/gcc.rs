@@ -4,16 +4,17 @@ use gccjit::{
 };
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::ops::DerefMut;
 use std::rc::Rc;
 use std::sync::Arc;
 
 use super::memory::Memory;
 use super::parser::Ast;
 use super::structs::{
-    self, AssignVar, Constructor, DataType, Enum, EnumValue, FieldAccessName, ForLoop, Impl, ImplMethod, Name, Overloaded, OverloadedOp, ParameterType, RangeValue, RefOp, StructDecl, Value, ValueEnum
+    self, AssignVar, Condition, Constructor, DataType, Enum, EnumValue, FieldAccessName, ForLoop, Impl, ImplMethod, MacroKind, Name, Overloaded, OverloadedOp, ParameterType, RangeValue, RefOp, StructDecl, Value, ValueEnum
 };
 use super::structs::{Expr, FunctionKind, LibLink, WhileLoop};
-use crate::modules::structs::{Otherwise, RangeType};
+use crate::modules::structs::{ExpandSection, Otherwise, RangeType};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum GccValues<'a> {
@@ -289,9 +290,66 @@ impl<'a> GccContext<'a> {
                         self.parse_block(ast_block, block, memory, ast);
                     }
                 }
+                Expr::Macro(ref apollo_macro) => {
+                    memory.macros.push(apollo_macro.clone());
+                }
+                Expr::MacroCall(ref mut macro_call) => {
+                    let result = self.parse_macro_call(macro_call, block, memory, ast);
+                    block.add_eval(None, result.rvalue());
+                }
                 _ => continue,
             }
         }
+    }
+
+    fn parse_macro_call(&'a self, macro_call: &mut structs::Call, block: &mut Block<'a>, memory: &mut Memory<'a>, ast: &mut Ast) -> GccValues<'a> {
+        println!("MACRO CALL: {}", macro_call.name.name);
+        if let Some((kind, expandable_macro)) = memory.expandable_macros.clone().get(&macro_call.name.name) {
+            let macro_expressions = &expandable_macro.block.borrow_mut().expr;
+            let ValueEnum::Closure(ref mut closure) = macro_call.args[0].value else {
+                panic!("First argument of expandable macro call must be a closure")
+            };
+            let mut closure = self.get_rc_value(closure).unwrap();
+            let closure_expressions = self.get_rc_value(&mut closure.block).unwrap().expr;
+            let expr = match kind {
+                ExpandSection::Head => vec![macro_expressions, &closure_expressions],
+                ExpandSection::Tail => vec![&closure_expressions, macro_expressions]
+            }.into_iter().flatten().map(|x| x.clone()).collect::<Vec<_>>();
+            let box_return = match kind {
+                ExpandSection::Head => closure.block.borrow_mut().box_return.clone(),
+                ExpandSection::Tail => expandable_macro.block.borrow_mut().box_return.clone(),
+            };
+            let fn_name = format!("closure_{}", self.uuid().chars().filter(|x| *x != '-').collect::<String>());
+            let dt = if let Some(ref mut dt) = expandable_macro.clone().return_type {
+                self.parse_datatype(dt, memory)
+            }else{
+                <() as Typeable>::get_type(self.context)
+            };
+            let copy = memory.function_scope.clone();
+            let mut count = 0;
+            let mut parameters = Vec::new();
+            let mut closure_vars = HashMap::new();
+            let mut args = Vec::new();
+            for (k, v) in memory.variables.get(&memory.function_scope).unwrap().iter() {
+                args.push(v.to_rvalue());
+                let parameter = self.context.new_parameter(None, v.to_rvalue().get_type(), k);
+                parameters.push(parameter);
+                count += 1;
+                closure_vars.insert(k.into(), parameter.to_lvalue());
+            }
+            let closure = self.context.new_function(None, gccjit::FunctionType::Internal, dt, &parameters, &fn_name, false);
+            let mut new_block = closure.new_block(self.uuid());
+            memory.variables.insert(fn_name.clone(), closure_vars);
+            let mut closure_block = structs::Block {
+                expr,
+                box_return
+            };
+            memory.function_scope = fn_name;
+            self.parse_block(&mut closure_block, &mut new_block, memory, ast);
+            memory.function_scope = copy;
+            return GccValues::R(self.context.new_call(None, closure, args.as_slice()));
+        }
+        GccValues::Nil
     }
 
     fn parse_asm(&'a self, asm: &structs::Assembly, block: &mut Block<'a>, memory: &mut Memory<'a>, ast: &mut Ast) {
@@ -799,6 +857,9 @@ impl<'a> GccContext<'a> {
             if let Some(function_address) = new_memory.function_addresses.get(name) {
                 memory.function_addresses.insert(import.into(), *function_address);
             }
+            if let Some(expandable_macro) = new_memory.expandable_macros.get(name) {
+                memory.expandable_macros.insert(import.into(), expandable_macro.clone());
+            }
         }
     }
 
@@ -970,7 +1031,6 @@ impl<'a> GccContext<'a> {
                 let mut new_block = function.new_block(self.uuid());
                 let mut block = closure.block.borrow_mut();
                 self.parse_block(&mut block, &mut new_block, memory, ast);
-                memory.closures.insert(function.get_address(None), function);
                 GccValues::R(function.get_address(None))
             }
             ref val => unreachable!("Found value enum {:?} while parsing value", val),
@@ -1319,6 +1379,30 @@ impl<'a> GccContext<'a> {
         let traits : Vec<&structs::Arg> = function.args.iter().filter(|x| { if let ParameterType::Implements(_) = x.datatype { true } else { false }} ).collect();
         if !traits.is_empty() {
             memory.functions_with_traits.insert(function.name.name.clone(), function.clone());
+            return;
+        }
+        let mut expandable = false;
+        println!("FUNCTION NAME: {}", function.name.name);
+        for apollo_macro in memory.macros.iter() {
+            for kind in apollo_macro.macros.iter() {
+                match kind {
+                    MacroKind::Align(_) => panic!("You're trying to align a function (??????) wtf bro"),
+                    MacroKind::Conditional(ref condition) => {
+                        match condition {
+                            Condition::Os(ref variant) => {
+                                if !variant.is(std::env::consts::OS) {
+                                    memory.macros.clear();
+                                    return
+                                }
+                            }
+                        }
+                    }
+                    MacroKind::Expand(ref expand) => { expandable = true; memory.expandable_macros.insert(function.name.name.clone(), (expand.clone(), function.clone())); }
+                };
+            }
+        }
+        memory.macros.clear();
+        if expandable {
             return;
         }
         if memory.functions.contains_key(&function.name.name) {
@@ -1707,18 +1791,6 @@ impl<'a> GccContext<'a> {
                 self.size_of(&args[0], memory),
             ));
         }
-        if call.name.name == "start_va" {
-            let function = block.get_function();
-            let last_fixed = function.get_param(std::cmp::max(1, function.get_param_count() as i32) - 1);
-            let last_fixed_type = last_fixed.to_rvalue().get_type().get_aligned(8);
-            let addr_type = memory.datatypes.get("ui8").unwrap();
-            let offset = self.context.new_bitcast(None, last_fixed.to_lvalue().get_address(None), *addr_type);
-            let offset = self.context.new_binary_op(None, BinaryOp::Plus, offset.get_type(), offset, self.context.new_rvalue_from_int(offset.get_type(), last_fixed_type.get_size() as i32));
-            let variables = memory.variables.entry(memory.function_scope.clone()).or_insert(HashMap::new());
-            let varargs = variables.get("varargs").unwrap();
-            block.add_assignment(None, *varargs, self.context.new_bitcast(None, offset, varargs.to_rvalue().get_type()));
-            return GccValues::L(*varargs);
-        }
         if let Some(field) = field {
             return self.parse_impl_call(args, call, field, block, memory, ast);
         }
@@ -1741,9 +1813,6 @@ impl<'a> GccContext<'a> {
             if let Some(function) = function {
                 let mut function = function.clone();
                 self.parse_function(&mut function, memory, ast);
-            }else{
-                let function_ptr = memory.variables.get(&memory.function_scope).unwrap().get(&fn_name).unwrap();
-                self.context.new_call_through_ptr(None, function_ptr.to_rvalue(), args.iter().map(|x| x.rvalue()).collect::<Vec<_>>().as_slice());
             }
         }else if let Some(ref mut to_impl) = to_impl {
             let params = self.build_impl_params(args.clone(), to_impl.args.clone(), memory, call.name.name.clone());

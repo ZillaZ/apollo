@@ -33,7 +33,7 @@ impl Display for i4 {
 }
 
 fn println(input: &string, count: i4) {
-	let size = 0
+	let size: ui8 = 0
 	for i in (0..count) {
 		size += strings::len(input[i])
 	}
@@ -48,5 +48,18 @@ fn println(input: &string, count: i4) {
 		offset += len + 1
 	}
 	value[size] = '\0'
+	let result : ui8 = 0
+	#asm {
+"
+xor %%rdi, %%rdi
+mov %1, %%rsi
+mov %2, %%rdx
+mov $1, %%rax
+syscall
+"
+		:in { ("r" value) ("r" size) }
+		:out { ("=a" result) }
+		:clob { "rdi" "rsi" "rdx" "memory" }
+	}
 	return
 }
