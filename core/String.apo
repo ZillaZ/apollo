@@ -3,6 +3,12 @@ slice: &String
 count: ui8
 }
 
+struct String {
+data: &char
+len: ui8
+capacity: ui8
+}
+
 impl String {
 	fn new() -> String {
 		let capacity : ui8 = 128

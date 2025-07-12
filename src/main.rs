@@ -1,6 +1,7 @@
 use std::collections::HashSet;
+use std::path;
 
-use modules::parser::NoirParser;
+use modules::parser::{Ast, NoirParser};
 use pest::{iterators::Pairs, Parser};
 use pest_derive::Parser;
 
@@ -39,6 +40,7 @@ fn main() {
     let input = input.trim();
     let mut pairs: Pairs<Rule> = Program::parse(Rule::program, &input).unwrap();
     let mut ast = parser.gen_ast(&mut pairs, "main".into());
+    read_core(parser, &mut ast);
     let gcc = GccContext::new(&context);
     let mut imports = HashSet::new();
     gcc.gen_bytecode(&mut ast, &mut imports, &mut memory, true, args.debug, true, args.out);
@@ -52,6 +54,26 @@ fn get_args() -> Vec<String> {
     std::env::args().collect()
 }
 
+fn read_core(parser: NoirParser, ast: &mut Ast) {
+    let path = std::env::var("APOLLO_CORE").unwrap();
+    for file in std::fs::read_dir(path).unwrap() {
+        let mut path = None;
+        if let Ok(file) = file {
+            if let Ok(file_type) = file.file_type() {
+                if file_type.is_file() && file.file_name().to_string_lossy().to_string().ends_with(".apo") {
+                    path = Some(file.path());
+                }
+            }
+        }
+        if let Some(path) = path {
+            let data = std::fs::read_to_string(path).unwrap();
+            let mut pairs = Program::parse(Rule::program, &data).unwrap();
+            let core_ast = parser.gen_ast(&mut pairs, format!("core"));
+            ast.context.extend(&core_ast.context);
+        }
+    }
+    todo!()
+}
 
 fn parse_args() -> Args {
     let args_str = get_args();

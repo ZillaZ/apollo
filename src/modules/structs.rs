@@ -35,6 +35,11 @@ pub enum Operations {
     Or,
     Not,
     Modulo,
+    BitshiftLeft,
+    BitshiftRight,
+    BitAnd,
+    BitOr,
+    BitXor,
 }
 
 impl From<Pair<'_, Rule>> for Operations {
@@ -55,6 +60,11 @@ impl From<Pair<'_, Rule>> for Operations {
             Rule::or => Or,
             Rule::not => Not,
             Rule::modulo => Modulo,
+            Rule::bt_left => BitshiftLeft,
+            Rule::bt_right => BitshiftRight,
+            Rule::bt_or => BitOr,
+            Rule::bt_and => BitAnd,
+            Rule::bt_xor => BitXor,
             rule => unreachable!("Found rule {:?}", rule)
         }
     }
@@ -120,7 +130,8 @@ pub enum Condition {
 pub enum MacroKind {
     Expand(ExpandSection),
     Align(usize),
-    Conditional(Condition)
+    Conditional(Condition),
+    Packed
 }
 
 impl From<&mut Pairs<'_, Rule>> for MacroKind {
@@ -144,6 +155,7 @@ impl From<&mut Pairs<'_, Rule>> for MacroKind {
                         _ => unreachable!()
                     }),
                     "alignment" => MacroKind::Align(next.as_str().parse::<usize>().unwrap()),
+                    "packed" => MacroKind::Packed,
                     rule => unreachable!("Found {rule}")
                 }
             }
@@ -490,7 +502,7 @@ pub struct ImplMethod {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Impl {
     pub trait_name: String,
-    pub target_name: String,
+    pub target_name: Option<String>,
     pub generics: Vec<(String, String)>,
     pub methods: Vec<ImplMethod>,
 }
@@ -614,6 +626,7 @@ pub struct AsmArg {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Assembly {
+    pub volatile: bool,
     pub asm: String,
     pub input: Vec<AsmArg>,
     pub output: Vec<AsmArg>,

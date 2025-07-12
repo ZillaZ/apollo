@@ -1,0 +1,7 @@
+fn to_int(data: string, len: i4) -> i8 {
+	let result : i8 = 0
+	for i in (0..len) {
+		result = result * 10 + (data[i] - 48)
+	}
+	return result
+}

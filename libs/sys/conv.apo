@@ -1,0 +1,46 @@
+fn pton(addr: string) -> array(ui1 4) {
+	let len = 0
+	let index = 0
+	let rtn = array(ui1 4)[0, 0, 0, 0]
+	while addr[len] != ':' {
+		if addr[len] == '.' {
+			index += 1
+		}else{
+			rtn[index] = rtn[index] * 10
+			rtn[index] = rtn[index] + addr[len] - '0'
+		}
+		len += 1
+	}
+	return rtn
+}
+
+fn htons(number: ui2) -> ui2 {
+	return (((number >> 8) & 255) | ((number & 255) << 8))
+}
+
+fn parse_tcp_addr(addr: string) -> array(ui1 16) {
+	let sa_data : array(ui1 16)
+	let len = 0
+	let port = 0
+	let dd_index = 0
+	while addr[len] != '\0' {
+		if addr[len] == ':' {
+			dd_index = len
+		}
+		len += 1
+	}
+
+	let current_pos = dd_index + 1
+    while addr[current_pos] != '\0' {
+        port = port * 10 + (addr[current_pos] - '0')
+        current_pos += 1
+    }
+
+	let inv = htons(port)
+	let b_addr = pton(addr)
+	let family : ui2 = 2
+	memcpy(&sa_data[0], family, 2)
+	memcpy(&sa_data[2], inv, 2)
+	memcpy(&sa_data[4], b_addr, 4)
+	return sa_data
+}

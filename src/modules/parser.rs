@@ -25,6 +25,8 @@ pub struct NoirParser {
 impl NoirParser {
     pub fn new() -> Self {
         let pratt_parser = PrattParser::new()
+            .op(Op::prefix(Rule::neg))
+            .op(Op::infix(Rule::bt_left, Assoc::Left) | Op::infix(Rule::bt_right, Assoc::Left) | Op::infix(Rule::bt_or, Assoc::Left) | Op::infix(Rule::bt_and, Assoc::Left) | Op::infix(Rule::bt_xor, Assoc::Left))
             .op(Op::infix(Rule::add, Assoc::Left) | Op::infix(Rule::sub, Assoc::Left))
             .op(Op::infix(Rule::mul, Assoc::Left) | Op::infix(Rule::div, Assoc::Left))
             .op(Op::infix(Rule::and, Assoc::Left))
@@ -45,7 +47,6 @@ impl NoirParser {
         let mut context = AstContext::new();
         context.scope = "main".to_string();
         let expressions = self.build_expression(pairs, &mut context);
-        println!("Functions on scope {}: {:?}", namespace, context.functions.iter().map(|(name, _)| name).collect::<Vec<&String>>());
         let imports = expressions
             .iter()
             .filter(|x| match x {
@@ -72,7 +73,6 @@ impl NoirParser {
         let mut rtn = HashMap::new();
         for import in imports {
             let lib_paths = self.parse_import_path(&import);
-            println!("{:?}", lib_paths);
             for lib_path in lib_paths.iter().map(|x| {
                 let mut aux : Vec<String> = x.split("/").map(|x| x.to_string()).collect();
                 aux.pop();
@@ -80,7 +80,6 @@ impl NoirParser {
             }) {
                 let new_name = lib_path.split("/").collect::<Vec<&str>>().join("::");
                 let lib_path = format!("{}.apo", lib_path);
-                println!("{lib_path}");
                 let input = std::fs::read_to_string(lib_path.clone()).unwrap();
                 let mut pairs: Pairs<Rule> = Program::parse(Rule::program, &input).unwrap();
                 let ast = self.gen_ast(&mut pairs, new_name);
@@ -180,8 +179,10 @@ impl NoirParser {
         let mut input = vec![];
         let mut output = vec![];
         let mut clob = vec![];
+        let mut volatile = false;
         for pair in pairs {
             match pair.as_rule() {
+                Rule::volatile => volatile = true,
                 Rule::string => string = pair.as_str()[1..pair.as_str().len()-1].into(),
                 Rule::asm_in => input = self.build_asm_args(&mut pair.into_inner(), context),
                 Rule::asm_out => output = self.build_asm_args(&mut pair.into_inner(), context),
@@ -189,7 +190,7 @@ impl NoirParser {
                 _ => unreachable!()
             }
         }
-        Assembly { asm: string, input, output, clobbered: clob }
+        Assembly { volatile, asm: string, input, output, clobbered: clob }
     }
 
     fn build_asm_args(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Vec<AsmArg> {
@@ -242,14 +243,14 @@ impl NoirParser {
     fn build_impl(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Impl {
         let mut switched = false;
         let mut trait_name = String::new();
-        let mut target_name = String::new();
+        let mut target_name = None;
         let mut methods = vec![];
         let mut generics = vec![];
         for pair in pairs {
             match pair.as_rule() {
                 Rule::name => {
                     if switched {
-                        target_name = pair.as_str().into();
+                        target_name = Some(pair.as_str().into());
                     } else {
                         trait_name = pair.as_str().into();
                     }
@@ -468,8 +469,7 @@ impl NoirParser {
 
     fn build_single_value(&self, pair: &mut Pair<Rule>, context: &mut AstContext) -> Value {
         match pair.as_rule() {
-            Rule::unary_operation => self.build_unary_op(&mut pair.clone().into_inner(), context),
-            Rule::binary_operation => self.build_binary_op(&mut pair.clone().into_inner(), context),
+            Rule::unary_operation | Rule::binary_operation => self.build_binary_op(&mut pair.clone().into_inner(), context),
             Rule::bvalue => self.build_bvalue(&mut pair.clone().into_inner(), context),
             Rule::base_value => self.build_base(&mut pair.clone().into_inner(), context),
             rule => unreachable!("Found rule {:?} while building single value", rule),
@@ -591,8 +591,8 @@ impl NoirParser {
     }
 
     pub fn build_return(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Return {
-        if let Some(pair) = pairs.next() {
-            let value = self.build_value(&mut pair.into_inner(), context);
+        if let Some(mut pair) = pairs.next() {
+            let value = self.build_single_value(&mut pair, context);
             Return { value: Some(value) }
         } else {
             Return { value: None }
@@ -675,13 +675,11 @@ impl NoirParser {
                     let mut datatype = String::new();
                     let mut variant = String::new();
                     let mut inner = None;
-                    for rule in eval.into_inner() {
+                    for mut rule in eval.into_inner() {
                         match rule.as_rule() {
                             Rule::struct_type => datatype = rule.as_str().into(),
                             Rule::enum_variant_name => variant = rule.as_str().into(),
-                            Rule::bvalue => inner = Some(self.build_bvalue(&mut rule.into_inner(), context)),
-                            Rule::value => inner = Some(self.build_value(&mut rule.into_inner(), context)),
-                            Rule::binary_operation => inner = Some(self.build_binary_op(&mut rule.into_inner(), context)),
+                            Rule::base_value | Rule::unary_operation | Rule::binary_operation | Rule::bvalue => inner = Some(self.build_single_value(&mut rule, context)),
                             rule => unreachable!("Found rule {:?}", rule)
                         }
                     }
@@ -713,33 +711,16 @@ impl NoirParser {
         fn bop_helper(lhs: Value, op: Pair<'_, Rule>, rhs: Value) -> Value {
             Value::non_heap(ValueEnum::BinaryOp(Rc::new(RefCell::new(BinaryOp { lhs: Rc::new(RefCell::new(lhs)), op: Operations::from(op), rhs: Rc::new(RefCell::new(rhs)) }))))
         }
-
-        self.pratt_parser.map_primary(|mut primary| match primary.as_rule() {
-            Rule::bvalue | Rule::base_value | Rule::binary_operation | Rule::unary_operation => self.build_single_value(&mut primary, context),
-            _ => unreachable!()
-        }).map_infix(|lhs, op, rhs| bop_helper(lhs, op, rhs))
-          .parse(pairs)
-    }
-
-    fn build_unary_op(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Value {
         fn unop_helper(value: Value, op: Pair<'_, Rule>) -> Value {
             Value::non_heap(ValueEnum::UnaryOp(Rc::new(RefCell::new(UnaryOp { prefix: Operations::from(op), value: Rc::new(RefCell::new(value)) }))))
         }
-        let op = pairs.next().unwrap();
-        let value = self.build_single_value(&mut pairs.next().unwrap(), context);
-        unop_helper(value, op)
-    }
 
-    fn build_value(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Value {
-        let mut peekable = pairs.peekable();
-        let pair = peekable.peek().unwrap();
-        match pair.as_rule() {
-            Rule::unary_operation => self.build_unary_op(&mut pair.clone().into_inner(), context),
-            Rule::binary_operation => self.build_binary_op(&mut pair.clone().into_inner(), context),
-            Rule::bvalue => self.build_bvalue(&mut pair.clone().into_inner(), context),
-            Rule::base_value => self.build_base(&mut pair.clone().into_inner(), context),
-            rule => unreachable!("Found rule {:?} while building value", rule),
-        }
+        self.pratt_parser.map_primary(|mut primary| match primary.as_rule() {
+            Rule::bvalue | Rule::base_value | Rule::binary_operation => self.build_single_value(&mut primary, context),
+            _ => unreachable!()
+        }).map_infix(|lhs, op, rhs| bop_helper(lhs, op, rhs))
+          .map_prefix(|op, value| unop_helper(value, op))
+          .parse(pairs)
     }
 
     fn build_range(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> RangeValue {
@@ -902,6 +883,7 @@ impl NoirParser {
                 "\\n" => '\n',
                 "\\t" => '\t',
                 "\\0" => '\0',
+                "\\r" => '\r',
                 seq => unreachable!("Found sequence {} {:?}", seq, seq.as_bytes())
             }
         }else{

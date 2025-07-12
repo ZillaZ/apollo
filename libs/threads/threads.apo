@@ -14,7 +14,7 @@ fn sleep(seconds: ui8, nanos: ui8) {
 	let remaining : KernelTimespec
 	let remaining_addr = &remaining
 	let result : ui8 = 0
-	#asm {
+	#asm volatile {
 "
 mov %1, %%rdi
 mov %2, %%rsi
@@ -23,7 +23,7 @@ syscall
 "
 		:in { ("r" time_addr) ("r" remaining_addr) }
 		:out { ("=a" result) }
-		:clob { "rdi" "rsi" "memory" }
+		:clob { "rdi" "rsi" "rcx" "r11" "memory" }
 	}
 	return
 }
@@ -31,14 +31,14 @@ syscall
 #[expandable(head)]
 fn fork(){
 	let pid : ui8 = 0
-	#asm {
+	#asm volatile {
 "
 xor %%rdi, %%rdi
 mov $0x39, %%rax
 syscall
 "
 		:out { ("=a" pid ) }
-		:clob { "rdi" }}
+		:clob { "rdi" "rcx" "r11" "memory" }}
 	if pid != 0 {
 		return
 	}

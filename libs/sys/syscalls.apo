@@ -1,0 +1,110 @@
+use std::sys::conv::parse_tcp_addr
+
+fn socket_accept(listener_fd: i8) -> i8 {
+	let socket_fd = -1
+	#asm volatile {
+		"
+mov %1, %%rdi
+xor %%rsi, %%rsi
+xor %%rdx, %%rdx
+mov $0x2b, %%rax
+syscall
+"
+		:in { ("r" listener_fd) }
+		:out { ("=a" socket_fd) }
+		:clob { "rdi" "rsi" "rdx" "rcx" "r11" "memory" }
+	}
+	return socket_fd
+}
+
+fn new_socket(family: ui8, type: ui8) -> i8 {
+	let socket_fd : i8 = -1
+	#asm volatile {
+"
+mov %1, %%rdi
+mov %2, %%rsi
+xor %%rdx, %%rdx
+mov $0x29, %%rax
+syscall
+"
+		:in { ("r" family) ("r" type) }
+		:out { ("=a" socket_fd) }
+		:clob { "rdi" "rsi" "rdx" "rcx" "r11" "memory" }
+	}
+	return socket_fd
+}
+
+fn bind_socket_ipv4(sock_fd: i8, addr: string) -> i8 {
+	let sock_addr = conv::parse_tcp_addr(addr)
+	let sock_addr_ptr = &sock_addr
+	let addr_len : ui8 = 16
+	let result : i8 = -1
+	#asm volatile {
+		"
+mov %1, %%rdi
+mov %2, %%rsi
+mov %3, %%rdx
+mov $0x31, %%rax
+syscall
+"
+		:in { ("r" sock_fd) ("r" sock_addr_ptr) ("r" addr_len) }
+		:out { ("=a" result) }
+		:clob { "rdi" "rsi" "rdx" "rcx" "r11" "memory" }
+	}
+	return result
+}
+
+fn socket_listen(sock_fd: i8) -> i8 {
+	let result : i8 = -1
+	#asm volatile {
+"
+mov %1, %%rdi
+mov $256, %%rsi
+mov $0x32, %%rax
+syscall
+"
+		:in { ("r" sock_fd) }
+		:out { ("=a" result) }
+		:clob { "rdi" "rsi" "rcx" "r11" "memory" }
+	}
+	return result
+}
+
+fn read(fd: i8, buffer: &ui1, count: ui8) -> i8 {
+	let ret_count : i8 = -1
+	#asm volatile {
+"
+mov %1, %%rdi
+mov %2, %%rsi
+mov %3, %%rdx
+xor %%rax, %%rax
+syscall
+"
+		:in { ("r" fd) ("r" buffer) ("r" count) }
+		:out { ("=a" ret_count) }
+		:clob { "rdi" "rsi" "rdx" "rcx" "r11" "memory" }
+	}
+	return ret_count
+}
+
+fn set_sock_opt(sock_fd: i8, level: i8, opt: i8) -> i8 {
+	let optval : i8 = 1
+	let optval_addr = &optval
+	let size : i8 = size_of(optval)
+	let result : i8 = -1
+	#asm volatile {
+"
+mov %1, %%rdi
+mov %2, %%rsi
+mov %3, %%rdx
+mov %4, %%r10
+mov %5, %%r8
+mov $0x36, %%rax
+syscall
+"
+		:in { ("r" sock_fd) ("r" level) ("r" opt) ("r" optval_addr) ("r" size) }
+		:out { ("=a" result) }
+		:clob { "rdi" "rsi" "rdx" "r10" "r8" "rcx" "r11" "memory" }
+	}
+	return result
+}

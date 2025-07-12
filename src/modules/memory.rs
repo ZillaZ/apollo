@@ -27,7 +27,7 @@ pub struct Memory<'a> {
     pub pointer_types: HashSet<Type<'a>>,
     pub imports: HashSet<String>,
     pub enum_variants: HashMap<Type<'a>, HashMap<String, (i32, Option<Field<'a>>)>>,
-    pub block_tail_expr: VecDeque<Expr>,
+    pub block_tail_expr: HashMap<Block<'a>, Vec<Expr>>,
     pub functions_with_traits: HashMap<String, AstFunction>,
     pub impl_with_traits: HashMap<String, (String, ImplMethod)>,
     pub variadic_args: HashMap<Function<'a>, Vec<Parameter<'a>>>,
@@ -38,7 +38,7 @@ pub struct Memory<'a> {
 
 impl<'a> Memory<'a> {
     pub fn new(name: String) -> Self {
-        let builtins = vec!["printf", "strnlen", "malloc", "memcpy", "realloc"]
+        let builtins = vec!["printf", "strnlen", "malloc", "memcpy", "realloc", "free", "alloca"]
             .iter()
             .map(|x| x.to_string())
             .collect::<_>();
@@ -67,7 +67,7 @@ impl<'a> Memory<'a> {
             pointer_types:HashSet::new(),
             imports:HashSet::new(),
             enum_variants: HashMap::new(),
-            block_tail_expr: VecDeque::new(),
+            block_tail_expr: HashMap::new(),
             functions_with_traits: HashMap::new(),
             impl_with_traits: HashMap::new(),
             variadic_args: HashMap::new(),

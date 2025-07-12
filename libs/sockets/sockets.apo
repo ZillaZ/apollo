@@ -1,12 +1,107 @@
-link with "sockets.so"
+use std::sys::syscalls { set_sock_opt read socket_accept new_socket bind_socket_ipv4 socket_listen }
 
-struct TcpListener {}
-struct TcpStream {}
-struct StreamData {
-	size: u8
-	data: &u1
+fn pton(addr: string) -> array(ui1 4) {
+	let len = 0
+	let index = 0
+	let rtn = array(ui1 4)[0, 0, 0, 0]
+	while addr[len] != ':' {
+		if addr[len] == '.' {
+			index += 1
+		}else{
+			rtn[index] = rtn[index] * 10
+			rtn[index] = rtn[index] + addr[len] - '0'
+		}
+		len += 1
+	}
+	return rtn
 }
 
-extern fn new_tcp_listener(address: &string) -> &TcpListener {}
-extern fn receive_incoming(listener: &TcpListener) -> &TcpStream {}
-extern fn read_tcp(stream: &TcpStream) -> &StreamData {}
+fn htons(number: ui2) -> ui2 {
+	return (((number >> 8) & 255) | ((number & 255) << 8))
+}
+
+fn parse_tcp_addr(addr: string) -> array(ui1 16) {
+	let sa_data : array(ui1 16)
+	let len = 0
+	let port = 0
+	let dd_index = 0
+	while addr[len] != '\0' {
+		if addr[len] == ':' {
+			dd_index = len
+		}
+		len += 1
+	}
+
+	let current_pos = dd_index + 1
+    while addr[current_pos] != '\0' {
+        port = port * 10 + (addr[current_pos] - '0')
+        current_pos += 1
+    }
+
+	let inv = htons(port)
+	let b_addr = pton(addr)
+	let family : ui2 = 2
+	memcpy(&sa_data[0], family, 2)
+	memcpy(&sa_data[2], inv, 2)
+	memcpy(&sa_data[4], b_addr, 4)
+	return sa_data
+}
+
+struct TcpSocket {
+fd: i8
+}
+
+impl TcpSocket {
+	fn new() -> TcpSocket {
+		let af_inet: ui8 = 2
+		let tcp_stream: ui8 = 1
+		let socket_fd = syscalls::new_socket(af_inet, tcp_stream)
+		return new TcpSocket { fd: socket_fd }
+	}
+	fn read(self: &TcpSocket, count: &ui8) -> &ui1 {
+		let buffer_size = 128
+		let buffer : &ui1 = malloc(buffer_size)
+		let bytes_read = syscalls::read(^self.fd, buffer, buffer_size)
+		while bytes_read == buffer_size {
+			if bytes_read >= buffer_size {
+				buffer_size *= 2
+				buffer = realloc(buffer, buffer_size)
+			}
+			let r = syscalls::read(^self.fd, &buffer[bytes_read], buffer_size - bytes_read)
+			if r < 0 {
+				printf("Error while reading fd %d: %d\n", ^self.fd, r)
+			}else{
+				bytes_read += r
+			}
+		}
+		^count = bytes_read
+		return buffer
+	}
+}
+
+struct TcpListener {
+fd: i8
+addr: string
+}
+
+impl TcpListener {
+	fn new(addr: string) -> TcpListener {
+		let socket = TcpSocket.new()
+		let af_inet = 2
+		let sock_stream = 1
+		let sol_socket = 1
+		let reuse_addr = 2
+		let listener_fd = syscalls::new_socket(af_inet, sock_stream)
+		syscalls::set_sock_opt(listener_fd, sol_socket, reuse_addr)
+		syscalls::bind_socket_ipv4(listener_fd, addr)
+		syscalls::socket_listen(listener_fd)
+		return new TcpListener { fd: listener_fd addr: addr }
+	}
+
+	fn accept(self: &TcpListener) -> TcpSocket {
+		let socket_fd : i8 = syscalls::socket_accept(^self.fd)
+		return new TcpSocket {
+			fd: socket_fd
+		}
+	}
+}

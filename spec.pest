@@ -17,7 +17,7 @@ char                = _{
 char_value          = @{ "'" ~ char ~ "'" }
 integer             = @{ unsigned? ~ ASCII_DIGIT+ }
 float               = @{ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ }
-binary_op           = _{ modulo | add | sub | mul | div | gte | gt | lte | lt | cmp_eq | neq | and | or }
+binary_op           = _{ bt_xor | bt_and | bt_left | bt_right | bt_or | modulo | add | sub | mul | div | gte | gt | lte | lt | cmp_eq | neq | and | or }
 overloaded_op       =  { (field_access | name) ~ overloaded_ops ~ value }
 modulo              =  { "%" }
 add                 =  { "+" }
@@ -28,6 +28,11 @@ add_to              =  { "+=" }
 sub_to              =  { "-=" }
 mul_to              =  { "*=" }
 div_to              =  { "/=" }
+bt_left             =  { "<<" }
+bt_right            =  { ">>" }
+bt_or               =  { "|" }
+bt_and              =  { "&" }
+bt_xor              =  { "~" }
 dd                  = _{ ":" }
 eq                  = _{ "=" }
 gt                  =  { ">" }
@@ -43,14 +48,14 @@ attribute           =  { name_str ~ ("(" ~ attribute ~ ")")? }
 struct              =  { "struct" ~ name_str ~ "{" ~ (trait_field | field_decl)* ~ "}" }
 enum                =  { "enum" ~ struct_type ~ "{" ~ enum_variant+ ~ "}" }
 enum_variant        =  { struct_type ~ ("(" ~ datatype ~ ")")? }
-enum_variant_name   =  { 'A'..'Z' ~ ASCII_ALPHANUMERIC* }
+enum_variant_name   =  @{ 'A'..'Z' ~ ASCII_ALPHANUMERIC* }
 enum_build          =  { struct_type ~ "." ~ enum_variant_name ~ ("(" ~ value ~ ")")? }
 enum_match          =  { name_str ~ "." ~ enum_variant_name ~ ("(" ~ name_str ~ ")")? }
 field_decl          =  { name_str ~ dd ~ datatype }
 closure             =  { "|" ~ (name_str ~ ("," ~ name_str)*)? ~ "|" ~ block }
 base_value          =  { macro_call | closure | constructor | array | "(" ~ range ~ ")" | bool | enum_build | field_access | array_access | call | char_value | float | integer | name | string | "(" ~ value ~ ")" }
 bvalue              =  { base_value ~ type_casting? }
-neg = { "-" }
+neg                 =  { "-" }
 unary_op            = _{ neg | not }
 unary_operation     =  { unary_op ~ bvalue }
 binary_operation    =  { bvalue ~ (binary_op ~ bvalue)+ }
@@ -87,7 +92,8 @@ asm_arg             =  { "(" ~ ("[" ~ name ~ "]")? ~ string ~ value ~ ")" }
 asm_in              =  { ":in" ~ "{" ~ asm_arg+ ~ "}" }
 asm_out             =  { ":out" ~ "{" ~ asm_arg+ ~ "}" }
 asm_clob            =  { ":clob" ~ "{" ~ string+ ~ "}" }
-assembly            =  { "#asm" ~ "{" ~ string ~ asm_in? ~ asm_out? ~ asm_clob? ~ "}" }
+volatile            =  { "volatile" }
+assembly            =  { "#asm" ~ volatile? ~ "{" ~ string ~ asm_in? ~ asm_out? ~ asm_clob? ~ "}" }
 unsigned            =  { "u" }
 fn                  = _{ "fn" }
 let                 = _{ "let" }
@@ -122,7 +128,7 @@ range               =  { value ~ range_type ~ value }
 range_type          =  { range_inclusive | range_exclusive }
 range_inclusive     =  { "..=" }
 range_exclusive     =  { ".." }
-impl                =  { "impl" ~ name ~ impl_for ~ name ~ impl_block }
+impl                =  { "impl" ~ name ~ (impl_for ~ name)? ~ impl_block }
 impl_for            =  { "for" }
 impl_block          =  { "{" ~ impl_expr* ~ "}" }
 impl_expr           = _{ function | impl_type }

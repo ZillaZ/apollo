@@ -1,41 +1,169 @@
-use std::strings::strings
-use std::sockets::sockets
+use std::strings { strings { SplitResult } }
 
-struct Header {
-	key: string
-	value: string
+enum AuthKind {
+	Bearer(String)
+	Basic(String)
 }
 
-struct HttpRequest {
-	headers: &Header
-	body: string
-}
-
-fn parse_request(data: &StreamData) {
-	let str = new_string_from(^data.data)
-	printf("REQUEST:\n%s\n", str.chars)
-	let split_result = split(&str, 10 as char)
-	let start = split(split_result.data, ' ')
-	let method = start.data[0]
-	let i = 1
-	let flag = false
-	while(i < split_result.count) {
-		let line = split_result.data[i]
-		let result = split(&line, ':')
-		printf("out checks\n")
-		if flag {
-			printf("body is %s\n", line.chars)
+impl AuthKind {
+	fn from_str(value: String) -> AuthKind {
+		let whitespace : i8 = value.find(' ')
+		let kind = value.range(0, whitespace)
+		let auth_value = value.range(whitespace+1, value.len)
+		if kind.data == "Bearer" {
+			return AuthKind.Bearer(auth_value)
+		}else{
+			return AuthKind.Basic(auth_value)
 		}
-		if line.chars[0] == 0  {
-			printf("newline only")
-			flag = true
-		}
-		if (!flag) && (result.count > 1) {
-			let header = result.data[1]
-			printf("header is %d\n", header.len)
-		}
-		i += 1
 	}
-	printf("%s\n", method.chars)
-	return
+}
+
+enum HttpMethod {
+	Get
+	Post
+	Delete
+	Put
+	Patch
+	Head
+	Options
+}
+
+impl HttpMethod {
+	fn parse(data: String) -> HttpMethod {
+		let new_line : i8 = data.find('\n')
+		let method_str = data.range(0, new_line - 1)
+		if method_str == "GET" {
+			return HttpMethod.Get
+		}else if method_str == "POST" {
+			return HttpMethod.Post
+		}else if method_str == "DELETE" {
+			return HttpMethod.Delete
+		}else if method_str == "PUT" {
+			return HttpMethod.Put
+		}else if method_str == "PATCH" {
+			return HttpMethod.Patch
+		}else if method_str == "HEAD" {
+			return HttpMethod.Head
+		}else{
+			return HttpMethod.Options
+		}
+	}
+}
+
+enum Header {
+	ContentType(String)
+	Authentication(AuthKind)
+	ContentLength(ui8)
+}
+
+impl Header {
+	fn print(self: Header) {
+		if self.ContentType(ct) {
+			printf("Content-Type: %s\n", ct)
+		}else if self.Authentication(auth) {
+			printf("Auth\n")
+		}else if self.ContentLength(len) {
+			printf("Content-Length: %d\n", len)
+		}
+		return
+	}
+
+	fn from_string(kind: String, value: String) -> Header {
+		if kind == "Content-Type" {
+			return Header.ContentType(value)
+		}else if kind == "Content-Length" {
+			let conv = value.to_int() as ui8
+			return Header.ContentLength(conv)
+		}else if kind == "Authentication" {
+			return Header.Authentication(AuthKind.from_str(value))
+		}
+	}
+}
+
+struct HeaderLL{}
+
+impl HeaderLL {
+	fn print(self: &HeaderLL){}
+}
+
+enum Option {
+	Some(&HeaderLL)
+	None
+}
+
+impl Option {
+	fn print(self: Option) {
+		if self.Some(h) {
+			h.print()
+		}else{
+			printf("Option<None>\n")
+		}
+	}
+}
+
+struct HeaderLL {
+	header: Option
+	next: Option
+}
+
+impl HeaderLL {
+	fn build(data: String, out: &ui8) -> HeaderLL {
+		let result = data.split('\n')
+		let ll = new HeaderLL {
+			header: Option.None
+			next: Option.None
+		}
+		let ref = &ll
+		for i in (0..result.count) {
+			let line = result.slice[i]
+			let line_end : i8 = data.find('\n')
+			let kind_end : i8 = data.find(':')
+			let kind = data.range(0, kind_end)
+			let value = data.range(kind_end+1, line_end)
+			let header = Header.from_string(kind, value)
+			let ll_header = ^ref.header
+		}
+		return ll
+	}
+
+	fn print(self: &HeaderLL) {
+		let copy = ^self
+		let flag = true
+		while flag {
+			copy.header.print()
+			let next = copy.next
+			if next.None {
+				flag = false
+			}else if next.Some(h){
+				copy = ^h
+			}
+		}
+		return
+	}
+}
+
+struct Request {
+	method: HttpMethod
+	path: String
+	headers: HeaderLL
+	payload: &ui1
+}
+
+impl Request {
+	fn parse(data: String) -> Request {
+		let new_line = data.find('\n')
+		let method = HttpMethod.parse(data)
+		let path_start : i8 = data.find(' ')
+		let sub = data.range(path_start + 1, new_line)
+		let path_end = sub.find(' ')
+		let path = data.substring(path_start, path_end)
+		sub.free()
+		printf("Path is %s with len %d\n", path.fmt(), path.len)
+		let headers = data.range(new_line + 1, data.len - new_line - 1)
+		let out : ui8 = 0
+		let headers = HeaderLL.build(headers_start, count - new_line + 1, &out)
+		let payload : &ui1 = malloc(count - out - new_line - 1)
+		memcpy(payload, &data.value[out], count - out - new_line - 1)
+		return new Request { method: method path: path headers: headers payload: payload }
+	}
 }

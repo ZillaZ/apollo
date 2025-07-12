@@ -1,15 +1,4 @@
-use std { threads::threads { fork sleep } }
+use std { http::server::Server threads::threads { fork sleep } }
 
-fn hello(name: string) {
-	printf("Hello, %s!\n", name)
-	return
-}
-
-let args = -1
-let name = "Lucas"
-hello(name)
-threads::fork!(||{
-	let name = "Child"
-	hello(name)
-	return
-})
+let server = server::Server.new("127.0.0.1:8080")
+server.listen()

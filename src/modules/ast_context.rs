@@ -20,4 +20,16 @@ impl AstContext {
             scope: String::new(),
         }
     }
+
+    pub fn extend(&mut self, context: &AstContext) {
+        for (k, v) in context.functions.iter() {
+            self.functions.insert(k.into(), v.clone());
+        }
+        for (k, v) in context.structs.iter() {
+            self.structs.insert(k.into(), v.clone());
+        }
+        for (k, v) in context.variables.iter() {
+            self.variables.insert(k.into(), v.clone());
+        }
+    }
 }
