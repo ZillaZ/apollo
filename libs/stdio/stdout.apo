@@ -1,5 +1,3 @@
-use std::strings { strings::len }
-
 trait Display {
 	type T = ()
 	fn fmt(self: T) -> string

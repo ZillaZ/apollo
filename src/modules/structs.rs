@@ -416,7 +416,7 @@ pub struct Block {
 }
 
 impl Block {
-    pub fn to_ast(&mut self, namespace: String, context: AstContext) -> Ast {
+    pub fn to_ast(&mut self, namespace: String, context: AstContext, core_context: AstContext) -> Ast {
         Ast {
             namespace,
             context,
@@ -426,6 +426,7 @@ impl Block {
                 .map(|x| Rc::make_mut(x).get_mut().clone())
                 .collect::<Vec<_>>(),
             imports: std::collections::HashMap::new(),
+            core_context
         }
     }
     pub fn default() -> Block {

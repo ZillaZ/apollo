@@ -33,6 +33,7 @@ pub struct Memory<'a> {
     pub variadic_args: HashMap<Function<'a>, Vec<Parameter<'a>>>,
     pub macros: Vec<Macro>,
     pub expandable_macros: HashMap<String, (ExpandSection, AstFunction)>,
+    pub opaque: HashSet<Type<'a>>,
     pub should_delay_ref_ops: bool
 }
 
@@ -73,6 +74,7 @@ impl<'a> Memory<'a> {
             variadic_args: HashMap::new(),
             macros: Vec::new(),
             expandable_macros: HashMap::new(),
+            opaque: HashSet::new(),
             should_delay_ref_ops: false
         }
     }

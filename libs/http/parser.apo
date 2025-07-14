@@ -1,5 +1,3 @@
-use std::strings { strings { SplitResult } }
-
 enum AuthKind {
 	Bearer(String)
 	Basic(String)
@@ -77,6 +75,7 @@ impl Header {
 		}else if kind == "Authentication" {
 			return Header.Authentication(AuthKind.from_str(value))
 		}
+		return Header.ContentLength(0 as ui8)
 	}
 }
 
@@ -98,6 +97,7 @@ impl Option {
 		}else{
 			printf("Option<None>\n")
 		}
+		return
 	}
 }
 
@@ -156,14 +156,13 @@ impl Request {
 		let path_start : i8 = data.find(' ')
 		let sub = data.range(path_start + 1, new_line)
 		let path_end = sub.find(' ')
-		let path = data.substring(path_start, path_end)
+		let path = data.range(path_start, path_end)
 		sub.free()
 		printf("Path is %s with len %d\n", path.fmt(), path.len)
-		let headers = data.range(new_line + 1, data.len - new_line - 1)
+		let headers_str = data.range(new_line + 1, data.len - new_line - 1)
 		let out : ui8 = 0
-		let headers = HeaderLL.build(headers_start, count - new_line + 1, &out)
-		let payload : &ui1 = malloc(count - out - new_line - 1)
-		memcpy(payload, &data.value[out], count - out - new_line - 1)
+		let headers = HeaderLL.build(headers_str, &out)
+		let payload = headers_str.range(out, headers_str.len)
 		return new Request { method: method path: path headers: headers payload: payload }
 	}
 }

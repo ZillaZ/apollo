@@ -69,10 +69,10 @@ fn read_core(parser: NoirParser, ast: &mut Ast) {
             let data = std::fs::read_to_string(path).unwrap();
             let mut pairs = Program::parse(Rule::program, &data).unwrap();
             let core_ast = parser.gen_ast(&mut pairs, format!("core"));
-            ast.context.extend(&core_ast.context);
+            ast.extend(&core_ast);
+
         }
     }
-    todo!()
 }
 
 fn parse_args() -> Args {

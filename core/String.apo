@@ -74,4 +74,13 @@ impl String {
 		}
 		return result
 	}
+
+	fn free(self: String) {
+		free(self.data)
+		return
+	}
+
+	fn fmt(self: &String) -> string {
+		return self.data
+	}
 }

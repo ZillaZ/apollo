@@ -3,6 +3,7 @@ let
   overrides = (builtins.fromTOML (builtins.readFile ./rust-toolchain.toml));
   libPath = with pkgs; lib.makeLibraryPath [
     glibc.out
+    nix-ld # 1. Add nix-ld to the library path
   ];
 in
 pkgs.mkShell rec {
@@ -14,6 +15,7 @@ pkgs.mkShell rec {
     libgccjit
     libgcc
     stdenv
+    nix-ld # 2. Add nix-ld to the shell's inputs
   ];
   RUSTC_VERSION = overrides.toolchain.channel;
   # https://github.com/rust-lang/rust-bindgen#environment-variables

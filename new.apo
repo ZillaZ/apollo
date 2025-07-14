@@ -1,0 +1,3 @@
+use std::stdio::stdout::println
+
+println(array(string)["penis"], 1)

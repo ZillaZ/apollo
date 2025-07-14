@@ -55,19 +55,19 @@ impl TcpSocket {
 	fn new() -> TcpSocket {
 		let af_inet: ui8 = 2
 		let tcp_stream: ui8 = 1
-		let socket_fd = syscalls::new_socket(af_inet, tcp_stream)
+		let socket_fd = new_socket(af_inet, tcp_stream)
 		return new TcpSocket { fd: socket_fd }
 	}
 	fn read(self: &TcpSocket, count: &ui8) -> &ui1 {
 		let buffer_size = 128
 		let buffer : &ui1 = malloc(buffer_size)
-		let bytes_read = syscalls::read(^self.fd, buffer, buffer_size)
+		let bytes_read = read(^self.fd, buffer, buffer_size)
 		while bytes_read == buffer_size {
 			if bytes_read >= buffer_size {
 				buffer_size *= 2
 				buffer = realloc(buffer, buffer_size)
 			}
-			let r = syscalls::read(^self.fd, &buffer[bytes_read], buffer_size - bytes_read)
+			let r = read(^self.fd, &buffer[bytes_read], buffer_size - bytes_read)
 			if r < 0 {
 				printf("Error while reading fd %d: %d\n", ^self.fd, r)
 			}else{
@@ -91,15 +91,15 @@ impl TcpListener {
 		let sock_stream = 1
 		let sol_socket = 1
 		let reuse_addr = 2
-		let listener_fd = syscalls::new_socket(af_inet, sock_stream)
-		syscalls::set_sock_opt(listener_fd, sol_socket, reuse_addr)
-		syscalls::bind_socket_ipv4(listener_fd, addr)
-		syscalls::socket_listen(listener_fd)
+		let listener_fd = new_socket(af_inet, sock_stream)
+		set_sock_opt(listener_fd, sol_socket, reuse_addr)
+		bind_socket_ipv4(listener_fd, addr)
+		socket_listen(listener_fd)
 		return new TcpListener { fd: listener_fd addr: addr }
 	}
 
 	fn accept(self: &TcpListener) -> TcpSocket {
-		let socket_fd : i8 = syscalls::socket_accept(^self.fd)
+		let socket_fd : i8 = socket_accept(^self.fd)
 		return new TcpSocket {
 			fd: socket_fd
 		}

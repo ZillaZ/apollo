@@ -3,12 +3,12 @@ use std::http::parser { Request }
 
 struct Server {
 	addr: string
-	listener: sockets::TcpListener
+	listener: TcpListener
 }
 
 impl Server {
 	fn new(addr: string) -> Server {
-		let listener = sockets::TcpListener.new(addr)
+		let listener = TcpListener.new(addr)
 		return new Server { addr: addr listener: listener }
 	}
 
@@ -17,7 +17,7 @@ impl Server {
 			let count : ui8 = 0
 			let socket = ^self.listener.accept()
 			let request_bytes = socket.read(&count)
-			let request = parser::Request.parse(request_bytes, count)
+			let request = Request.parse(request_bytes)
 			request.headers.print()
 		}
 		return

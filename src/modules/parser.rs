@@ -16,6 +16,230 @@ pub struct Ast {
     pub expressions: Vec<Expr>,
     pub imports: HashMap<(String, Import), Rc<RefCell<Ast>>>,
     pub context: AstContext,
+    pub core_context: AstContext,
+}
+
+impl Ast {
+    pub fn extend(&mut self, new: &Ast) {
+        self.expressions = vec![new.expressions.clone(), self.expressions.clone()].into_iter().flatten().collect();
+        self.context.extend(&new.context);
+        self.core_context = new.context.clone();
+        extend_imports(&mut self.imports, new);
+    }
+
+    pub fn build_imports(&mut self) {
+        for ((_path, import), v) in self.imports.iter_mut() {
+            let mut ast = v.borrow_mut();
+            ast.build_imports();
+            for import in parse_import_path(import) {
+                let import = import.split("/").last().unwrap();
+                println!("building import {}", import);
+                if let Some(function) = ast.context.functions.clone().get(import) {
+                    let mut rec_imports = ast.get_fn_dependencies(import);
+                    for expr in rec_imports.iter() {
+                        match expr {
+                            Expr::StructDecl(ref decl) => {
+                                self.context.structs.insert(decl.name.clone(), decl.clone());
+                            }
+                            Expr::Function(ref function) => {
+                                self.context.functions.insert(function.name.name.clone(), function.clone());
+                            }
+                            _ => unreachable!()
+                        }
+                    }
+                    rec_imports.push(Expr::Function(function.clone()));
+                    rec_imports.extend_from_slice(&self.expressions);
+                    self.expressions = rec_imports;
+                    self.context.functions.insert(function.name.name.clone(), function.clone());
+                }else if let Some(dt) = ast.context.structs.clone().get(import) {
+                    let (mut rec_imports, impls) = ast.get_struct_dependencies(import);
+                    for expr in rec_imports.iter() {
+                        let mut aux = vec![expr.clone()];
+                        aux.extend_from_slice(&self.expressions);
+                        self.expressions = aux;
+
+                        match expr {
+                            Expr::StructDecl(ref decl) => {
+                                self.context.structs.insert(decl.name.clone(), decl.clone());
+                            }
+                            Expr::Enum(ref dt) => {
+                                self.context.enums.insert(dt.name.clone(), dt.clone());
+                            }
+                            _ => continue
+                        };
+                    }
+                    rec_imports.push(Expr::StructDecl(dt.clone()));
+                    rec_imports.extend_from_slice(&impls);
+                    rec_imports.extend_from_slice(&self.expressions);
+                    self.expressions = rec_imports;
+                    self.context.structs.insert(dt.name.clone(), dt.clone());
+                    self.context.impls.insert(dt.name.clone(), impls.clone().into_iter().map(|x| if let Expr::Impl(i) = x { i } else { unreachable!() }).collect());
+                }else if let Some(dt) = ast.context.enums.clone().get(import) {
+                    let (mut rec_imports, impls) = ast.get_enum_dependencies(import);
+                    for expr in rec_imports.iter() {
+                        let mut aux = vec![expr.clone()];
+                        aux.extend_from_slice(&self.expressions);
+                        self.expressions = aux;
+
+                        match expr {
+                            Expr::StructDecl(ref decl) => {
+                                self.context.structs.insert(decl.name.clone(), decl.clone());
+                            }
+                            Expr::Enum(ref dt) => {
+                                self.context.enums.insert(dt.name.clone(), dt.clone());
+                            }
+                            _ => continue
+                        };
+                    }
+                    rec_imports.push(Expr::Enum(dt.clone()));
+                    rec_imports.extend_from_slice(&impls);
+                    rec_imports.extend_from_slice(&self.expressions);
+                    self.expressions = rec_imports;
+                    self.context.enums.insert(dt.name.clone(), dt.clone());
+                    self.context.impls.insert(dt.name.clone(), impls.clone().into_iter().map(|x| if let Expr::Impl(i) = x { i } else { unreachable!() }).collect());
+                }
+            }
+        }
+    }
+
+    pub fn get_enum_dependencies(&mut self, import: &str) -> (Vec<Expr>, Vec<Expr>) {
+        let mut rtn = Vec::new();
+        let mut impls = Vec::new();
+        let dt = self.context.enums.get(import).unwrap();
+        for variant in dt.variants.iter() {
+            if let Some(ref dt) = variant.r#type {
+                match dt.datatype {
+                    DataType::StructType(ref name) => {
+                        if let Some(dt) = self.context.structs.get(name) {
+                            rtn.push(Expr::StructDecl(dt.clone()));
+                        }else{
+                            let dt = self.context.enums.get(name).unwrap();
+                            rtn.push(Expr::Enum(dt.clone()));
+                        }
+                        if let Some(aimpls) = self.context.impls.get(name) {
+                            impls = aimpls.clone().into_iter().map(|x| Expr::Impl(x)).collect();
+                        }
+                    }
+                    _ => continue
+                }
+            }
+        }
+        if let Some(aimpls) = self.context.impls.get(import) {
+            impls.extend(aimpls.iter().map(|x| Expr::Impl(x.clone())));
+        }
+        (rtn, impls)
+    }
+
+    pub fn get_struct_dependencies(&mut self, import: &str) -> (Vec<Expr>, Vec<Expr>) {
+        let mut rtn = Vec::new();
+        let mut impls = Vec::new();
+        let dt = self.context.structs.get(import).unwrap();
+        for field in dt.fields.iter() {
+            match field.datatype.datatype {
+                DataType::StructType(ref name) => {
+                    if let Some(dt) = self.context.structs.get(name) {
+                        rtn.push(Expr::StructDecl(dt.clone()));
+                    }else{
+                        let dt = self.context.enums.get(name).expect(&format!("Enum {} isn't defined", name));
+                        rtn.push(Expr::Enum(dt.clone()));
+                    }
+                    if let Some(aimpls) = self.context.impls.get(name) {
+                        println!("has impl {:?}", aimpls);
+                        impls = aimpls.clone().into_iter().map(|x| Expr::Impl(x)).collect();
+                    }
+                }
+                _ => continue
+            }
+        }
+
+        if let Some(aimpls) = self.context.impls.get(import) {
+            println!("ISS IMPL {:?}", aimpls);
+            impls.extend(aimpls.iter().map(|x| Expr::Impl(x.clone())));
+        }
+        (rtn, impls)
+    }
+
+    pub fn get_fn_dependencies(&mut self, import: &str) -> Vec<Expr> {
+        let mut rtn = Vec::new();
+        let function = self.context.functions.get(import).unwrap();
+        for param in function.args.iter() {
+            if let ParameterType::Type(ref dt) = param.datatype {
+                match dt.datatype {
+                    DataType::StructType(ref dt_name) => {
+                        let dt = self.context.structs.get(dt_name).unwrap();
+                        rtn.push(Expr::StructDecl(dt.clone()));
+                    }
+                    _ => continue
+                }
+            }
+        }
+        if let Some(ref dt) = function.return_type {
+            match dt.datatype {
+                DataType::StructType(ref name) => {
+                    let dt = self.context.structs.get(name).unwrap();
+                    rtn.push(Expr::StructDecl(dt.clone()));
+                }
+                _ => ()
+            }
+        }
+
+        let block = function.block.borrow();
+        for expr in block.expr.iter() {
+            let expr = expr.borrow();
+            match *expr {
+                Expr::Call(ref call) => {
+                    if self.context.functions.contains_key(&call.name.name) {
+                        continue
+                    }
+                    if let Some(function) = self.context.functions.get(&call.name.name) {
+                        rtn.push(Expr::Function(function.clone()));
+                    }else{
+                        println!("Function {} isn't defined. Skipping...", call.name.name);
+                    }
+                },
+                Expr::Assignment(ref assignment) => {
+                    if let ValueEnum::Constructor(ref constructor) = assignment.value.value {
+                        let constructor = constructor.borrow();
+                        let dt = self.context.structs.get(&constructor.name).unwrap();
+                        rtn.push(Expr::StructDecl(dt.clone()));
+                    }
+                },
+                _ => continue
+            }
+        }
+        rtn
+    }
+}
+
+fn parse_import_path(import: &Import) -> Vec<String> {
+    fn recursive_descent(namespace: &Namespace, acc: String, paths: &mut Vec<String>) {
+        if namespace.next.is_empty() {
+            paths.push(format!("{acc}/{}", namespace.name));
+        }else{
+            for namespace in namespace.next.iter() {
+                let acc = if namespace.next.is_empty() {
+                    acc.clone()
+               }else{
+                    format!("{acc}/{}", namespace.name)
+                };
+                recursive_descent(namespace, acc, paths);
+            }
+        }
+    }
+    let mut paths = vec![];
+    let start = if import.namespace.name == "std" {
+        std::env::var("APOLLO_LIBS").unwrap()
+                            }else{
+        std::env::current_dir().unwrap().to_str().unwrap().to_string()
+    };
+    recursive_descent(&import.namespace, start, &mut paths);
+    paths
+}
+fn extend_imports(imports: &mut HashMap<(String, Import), Rc<RefCell<Ast>>>, new: &Ast) {
+    imports.iter_mut().for_each(|(_, ast)| {
+        let mut ast = ast.borrow_mut();
+        ast.extend(new);
+    });
 }
 
 pub struct NoirParser {
@@ -62,6 +286,7 @@ impl NoirParser {
             expressions,
             context,
             imports,
+            core_context: AstContext::new()
         }
     }
 
@@ -222,9 +447,11 @@ impl NoirParser {
                 _ => unreachable!()
             }
         }
-        Enum {
+        let ast_enum = Enum {
             name, variants
-        }
+        };
+        context.enums.insert(ast_enum.name.clone(), ast_enum.clone());
+        ast_enum
     }
 
     fn build_enum_variant(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> EnumVariant {
@@ -243,7 +470,7 @@ impl NoirParser {
     fn build_impl(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Impl {
         let mut switched = false;
         let mut trait_name = String::new();
-        let mut target_name = None;
+        let mut target_name : Option<String> = None;
         let mut methods = vec![];
         let mut generics = vec![];
         for pair in pairs {
@@ -260,12 +487,21 @@ impl NoirParser {
                 _ => todo!(),
             }
         }
-        Impl {
+        let name: String = if let Some(ref target_name) = target_name {
+            target_name.clone()
+        }else{
+            trait_name.clone()
+        };
+
+        let implementation = Impl {
             trait_name,
             target_name,
             generics,
             methods,
-        }
+        };
+        let entry = context.impls.entry(name).or_insert(Vec::new());
+        entry.push(implementation.clone());
+        implementation
     }
 
     fn build_impl_block(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> (Vec<(String, String)>, Vec<ImplMethod>) {
