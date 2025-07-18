@@ -80,8 +80,8 @@ impl TcpSocket {
 }
 
 struct TcpListener {
-fd: i8
-addr: string
+	socket: TcpSocket
+	addr: string
 }
 
 impl TcpListener {
@@ -91,15 +91,14 @@ impl TcpListener {
 		let sock_stream = 1
 		let sol_socket = 1
 		let reuse_addr = 2
-		let listener_fd = new_socket(af_inet, sock_stream)
-		set_sock_opt(listener_fd, sol_socket, reuse_addr)
-		bind_socket_ipv4(listener_fd, addr)
-		socket_listen(listener_fd)
-		return new TcpListener { fd: listener_fd addr: addr }
+		set_sock_opt(socket.fd, sol_socket, reuse_addr)
+		bind_socket_ipv4(socket.fd, addr)
+		socket_listen(socket.fd)
+		return new TcpListener { socket: socket addr: addr }
 	}
 
 	fn accept(self: &TcpListener) -> TcpSocket {
-		let socket_fd : i8 = socket_accept(^self.fd)
+		let socket_fd : i8 = socket_accept(self.socket.fd)
 		return new TcpSocket {
 			fd: socket_fd
 		}

@@ -3,20 +3,24 @@ use pest::iterators::{Pair, Pairs};
 use crate::Rule;
 
 use super::{ast_context::AstContext, parser::Ast};
-use std::{cell::RefCell, rc::Rc};
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+    rc::Rc,
+};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct TraitMethod {
     pub name: String,
     pub params: Vec<Parameter>,
-    pub datatype: Option<Type>
+    pub datatype: Option<Type>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Trait {
     pub name: String,
     pub generics: Vec<String>,
-    pub methods: Vec<TraitMethod>
+    pub methods: Vec<TraitMethod>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -65,7 +69,7 @@ impl From<Pair<'_, Rule>> for Operations {
             Rule::bt_or => BitOr,
             Rule::bt_and => BitAnd,
             Rule::bt_xor => BitXor,
-            rule => unreachable!("Found rule {:?}", rule)
+            rule => unreachable!("Found rule {:?}", rule),
         }
     }
 }
@@ -100,30 +104,41 @@ impl Default for Type {
     }
 }
 
+impl From<DataType> for Type {
+    fn from(datatype: DataType) -> Self {
+        Self {
+            is_ref: false,
+            ref_count: 0,
+            datatype,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum ExpandSection {
     Head,
-    Tail
+    Tail,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum OsVariant {
     Windows,
-    Linux
+    Linux,
 }
 
 impl OsVariant {
     pub fn is(&self, variant_str: &str) -> bool {
-        variant_str == match self {
-            OsVariant::Windows => "windows",
-            OsVariant::Linux => "linux"
-        }
+        variant_str
+            == match self {
+                OsVariant::Windows => "windows",
+                OsVariant::Linux => "linux",
+            }
     }
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Condition {
-    Os(OsVariant)
+    Os(OsVariant),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -131,7 +146,7 @@ pub enum MacroKind {
     Expand(ExpandSection),
     Align(usize),
     Conditional(Condition),
-    Packed
+    Packed,
 }
 
 impl From<&mut Pairs<'_, Rule>> for MacroKind {
@@ -139,27 +154,25 @@ impl From<&mut Pairs<'_, Rule>> for MacroKind {
         let pair = pairs.next().unwrap();
         let next = pairs.next().unwrap().into_inner().next().unwrap();
         match pair.as_rule() {
-            Rule::name_str => {
-                match pair.as_str() {
-                    "expandable" => MacroKind::Expand(match next.as_str() {
-                        "head" => ExpandSection::Head,
-                        "tail" => ExpandSection::Tail,
-                        _ => unreachable!()
+            Rule::name_str => match pair.as_str() {
+                "expandable" => MacroKind::Expand(match next.as_str() {
+                    "head" => ExpandSection::Head,
+                    "tail" => ExpandSection::Tail,
+                    _ => unreachable!(),
+                }),
+                "condition" => MacroKind::Conditional(match next.as_str() {
+                    "os" => Condition::Os(match next.into_inner().next().unwrap().as_str() {
+                        "windows" => OsVariant::Windows,
+                        "linux" => OsVariant::Linux,
+                        _ => unreachable!(),
                     }),
-                    "condition" => MacroKind::Conditional(match next.as_str() {
-                        "os" => Condition::Os(match next.into_inner().next().unwrap().as_str() {
-                            "windows" => OsVariant::Windows,
-                            "linux" => OsVariant::Linux,
-                            _ => unreachable!()
-                        }),
-                        _ => unreachable!()
-                    }),
-                    "alignment" => MacroKind::Align(next.as_str().parse::<usize>().unwrap()),
-                    "packed" => MacroKind::Packed,
-                    rule => unreachable!("Found {rule}")
-                }
-            }
-            _ => unreachable!()
+                    _ => unreachable!(),
+                }),
+                "alignment" => MacroKind::Align(next.as_str().parse::<usize>().unwrap()),
+                "packed" => MacroKind::Packed,
+                rule => unreachable!("Found {rule}"),
+            },
+            _ => unreachable!(),
         }
     }
 }
@@ -207,7 +220,7 @@ struct VariadicValue(i32);
 #[derive(Clone, Debug, PartialEq)]
 pub enum ParameterType {
     Type(Type),
-    Implements(Vec<String>)
+    Implements(Vec<String>),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -292,14 +305,14 @@ pub struct FieldDecl {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Attribute {
     pub name: String,
-    pub value: ValueEnum
+    pub value: ValueEnum,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct StructDecl {
     pub name: String,
     pub fields: Vec<FieldDecl>,
-    pub attributes: Vec<Attribute>
+    pub attributes: Vec<Attribute>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -344,7 +357,7 @@ pub struct Constructor {
 pub struct EnumValue {
     pub datatype: String,
     pub variant: String,
-    pub inner: Option<Value>
+    pub inner: Option<Value>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -388,7 +401,10 @@ impl Default for Value {
 
 impl Value {
     pub fn non_heap(value: ValueEnum) -> Self {
-        Self { heap_allocated: false, value }
+        Self {
+            heap_allocated: false,
+            value,
+        }
     }
 }
 
@@ -416,7 +432,12 @@ pub struct Block {
 }
 
 impl Block {
-    pub fn to_ast(&mut self, namespace: String, context: AstContext, core_context: AstContext) -> Ast {
+    pub fn to_ast(
+        &mut self,
+        namespace: String,
+        context: AstContext,
+        core_context: AstContext,
+    ) -> Ast {
         Ast {
             namespace,
             context,
@@ -425,8 +446,8 @@ impl Block {
                 .iter_mut()
                 .map(|x| Rc::make_mut(x).get_mut().clone())
                 .collect::<Vec<_>>(),
-            imports: std::collections::HashMap::new(),
-            core_context
+            imports: HashMap::new(),
+            core_context,
         }
     }
     pub fn default() -> Block {
@@ -467,7 +488,7 @@ impl FunctionKind {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Closure {
     pub args: Vec<String>,
-    pub block: Rc<RefCell<Block>>
+    pub block: Rc<RefCell<Block>>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -489,7 +510,7 @@ pub struct Declaration {
 #[derive(Clone, Debug, PartialEq)]
 pub struct ImplType {
     pub name: String,
-    pub implements: Vec<String>
+    pub implements: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -497,7 +518,7 @@ pub struct ImplMethod {
     pub name: String,
     pub params: Vec<Arg>,
     pub datatype: Option<Type>,
-    pub body: Block
+    pub body: Block,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -506,6 +527,23 @@ pub struct Impl {
     pub target_name: Option<String>,
     pub generics: Vec<(String, String)>,
     pub methods: Vec<ImplMethod>,
+}
+
+impl From<&ImplMethod> for Function {
+    fn from(value: &ImplMethod) -> Self {
+        let name = value.name.clone();
+        Self {
+            name: Name {
+                name,
+                op: None,
+                op_count: 0,
+            },
+            kind: FunctionKind::Native,
+            args: value.params.clone(),
+            return_type: value.datatype.clone(),
+            block: Rc::new(RefCell::new(value.body.clone())),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -518,7 +556,7 @@ pub enum Otherwise {
 pub struct EnumMatch {
     pub name: String,
     pub variant: String,
-    pub var: String
+    pub var: String,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -565,7 +603,7 @@ pub enum ImportKind {
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct Namespace {
     pub name: String,
-    pub next: Vec<Box<Namespace>>
+    pub next: Vec<Box<Namespace>>,
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -609,20 +647,20 @@ pub enum RangeType {
 #[derive(Clone, Debug, PartialEq)]
 pub struct EnumVariant {
     pub name: String,
-    pub r#type: Option<Type>
+    pub r#type: Option<Type>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Enum {
     pub name: String,
-    pub variants: Vec<EnumVariant>
+    pub variants: Vec<EnumVariant>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct AsmArg {
     pub constraint: String,
     pub value: ValueEnum,
-    pub name: Option<String>
+    pub name: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -631,7 +669,7 @@ pub struct Assembly {
     pub asm: String,
     pub input: Vec<AsmArg>,
     pub output: Vec<AsmArg>,
-    pub clobbered: Vec<String>
+    pub clobbered: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -656,7 +694,7 @@ pub enum Expr {
     Enum(Enum),
     Assembly(Assembly),
     VariadicBlock(Block),
-    Macro(Macro)
+    Macro(Macro),
 }
 
 impl Expr {

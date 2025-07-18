@@ -1,7 +1,6 @@
 use std::collections::HashSet;
-use std::path;
 
-use modules::parser::{Ast, NoirParser};
+use modules::parser::{Ast, BuildCache, NoirParser};
 use pest::{iterators::Pairs, Parser};
 use pest_derive::Parser;
 
@@ -14,7 +13,7 @@ mod modules;
 struct Args {
     pub debug: bool,
     pub path: String,
-    pub out: String
+    pub out: String,
 }
 
 impl Default for Args {
@@ -22,7 +21,7 @@ impl Default for Args {
         Self {
             debug: false,
             path: "main.apo".into(),
-            out: "out".into()
+            out: "out".into(),
         }
     }
 }
@@ -41,9 +40,19 @@ fn main() {
     let mut pairs: Pairs<Rule> = Program::parse(Rule::program, &input).unwrap();
     let mut ast = parser.gen_ast(&mut pairs, "main".into());
     read_core(parser, &mut ast);
-    let gcc = GccContext::new(&context);
+    let mut cache = BuildCache::new();
+    ast.build_imports(&mut cache);
+    let gcc = GccContext::new(&context, ast.context.clone());
     let mut imports = HashSet::new();
-    gcc.gen_bytecode(&mut ast, &mut imports, &mut memory, true, args.debug, true, args.out);
+    gcc.gen_bytecode(
+        &mut ast,
+        &mut imports,
+        &mut memory,
+        true,
+        args.debug,
+        true,
+        args.out,
+    );
 }
 
 fn read_file(path: &str) -> String {
@@ -60,7 +69,13 @@ fn read_core(parser: NoirParser, ast: &mut Ast) {
         let mut path = None;
         if let Ok(file) = file {
             if let Ok(file_type) = file.file_type() {
-                if file_type.is_file() && file.file_name().to_string_lossy().to_string().ends_with(".apo") {
+                if file_type.is_file()
+                    && file
+                        .file_name()
+                        .to_string_lossy()
+                        .to_string()
+                        .ends_with(".apo")
+                {
                     path = Some(file.path());
                 }
             }
@@ -70,7 +85,6 @@ fn read_core(parser: NoirParser, ast: &mut Ast) {
             let mut pairs = Program::parse(Rule::program, &data).unwrap();
             let core_ast = parser.gen_ast(&mut pairs, format!("core"));
             ast.extend(&core_ast);
-
         }
     }
 }
@@ -84,18 +98,18 @@ fn parse_args() -> Args {
         if next_is_path {
             next_is_path = false;
             args.path = arg.into();
-            continue
+            continue;
         }
         if next_is_out {
             next_is_out = false;
             args.out = arg.into();
-            continue
+            continue;
         }
         match arg.as_str() {
             "--path" => next_is_path = true,
             "--out" => next_is_out = true,
             "--debug" => args.debug = true,
-            _ => panic!()
+            _ => panic!(),
         }
     }
     args

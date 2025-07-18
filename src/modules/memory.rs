@@ -1,5 +1,5 @@
-use gccjit::{Block, Field, Function, LValue, Parameter, RValue, Struct, Type};
 use super::structs::{ExpandSection, Expr, Function as AstFunction, ImplMethod, Macro, Trait};
+use gccjit::{Block, Field, Function, LValue, Parameter, RValue, Struct, Type};
 use std::collections::{HashMap, HashSet, VecDeque};
 
 pub struct Memory<'a> {
@@ -34,39 +34,41 @@ pub struct Memory<'a> {
     pub macros: Vec<Macro>,
     pub expandable_macros: HashMap<String, (ExpandSection, AstFunction)>,
     pub opaque: HashSet<Type<'a>>,
-    pub should_delay_ref_ops: bool
+    pub should_delay_ref_ops: bool,
 }
 
 impl<'a> Memory<'a> {
     pub fn new(name: String) -> Self {
-        let builtins = vec!["printf", "strnlen", "malloc", "memcpy", "realloc", "free", "alloca"]
-            .iter()
-            .map(|x| x.to_string())
-            .collect::<_>();
+        let builtins = vec![
+            "printf", "strnlen", "malloc", "memcpy", "realloc", "free", "alloca",
+        ]
+        .iter()
+        .map(|x| x.to_string())
+        .collect::<_>();
         Self {
             name,
             builtins,
             last_block: None,
             variables: HashMap::new(),
-            functions:HashMap::new(),
-            datatypes:HashMap::new(),
+            functions: HashMap::new(),
+            datatypes: HashMap::new(),
             primitive_types: HashMap::new(),
             constructors: HashMap::new(),
-            structs:HashMap::new(),
-            traits:HashMap::new(),
+            structs: HashMap::new(),
+            traits: HashMap::new(),
             function_scope: "main".into(),
             anon_count: 0,
-            trait_types:HashMap::new(),
+            trait_types: HashMap::new(),
             index: None,
-            units:HashMap::new(),
-            continue_block:None,
-            impls:HashMap::new(),
-            impl_methods:HashMap::new(),
-            function_addresses:HashMap::new(),
-            blocks:HashMap::new(),
-            field_types:HashMap::new(),
-            pointer_types:HashSet::new(),
-            imports:HashSet::new(),
+            units: HashMap::new(),
+            continue_block: None,
+            impls: HashMap::new(),
+            impl_methods: HashMap::new(),
+            function_addresses: HashMap::new(),
+            blocks: HashMap::new(),
+            field_types: HashMap::new(),
+            pointer_types: HashSet::new(),
+            imports: HashSet::new(),
             enum_variants: HashMap::new(),
             block_tail_expr: HashMap::new(),
             functions_with_traits: HashMap::new(),
@@ -75,7 +77,7 @@ impl<'a> Memory<'a> {
             macros: Vec::new(),
             expandable_macros: HashMap::new(),
             opaque: HashSet::new(),
-            should_delay_ref_ops: false
+            should_delay_ref_ops: false,
         }
     }
     pub fn unconst_type(&self, r#type: Type<'a>) -> Type<'a> {

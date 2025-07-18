@@ -79,64 +79,42 @@ impl Header {
 	}
 }
 
-struct HeaderLL{}
-
-impl HeaderLL {
-	fn print(self: &HeaderLL){}
+struct Headers {
+	headers: &Header
+	size: i4
 }
 
-enum Option {
-	Some(&HeaderLL)
-	None
-}
-
-impl Option {
-	fn print(self: Option) {
-		if self.Some(h) {
-			h.print()
-		}else{
-			printf("Option<None>\n")
-		}
-		return
-	}
-}
-
-struct HeaderLL {
-	header: Option
-	next: Option
-}
-
-impl HeaderLL {
-	fn build(data: String, out: &ui8) -> HeaderLL {
+impl Headers {
+	fn build(data: String, out: &ui8) -> Headers {
 		let result = data.split('\n')
-		let ll = new HeaderLL {
-			header: Option.None
-			next: Option.None
-		}
-		let ref = &ll
+		let aux : Header
+		let headers : &Header = malloc(result.count * size_of(aux))
+		let count = 0
+		let flag = false
 		for i in (0..result.count) {
+			let line = result.slice[i]
+			let line_end : i8 = data.find('\n')
+			flag = data.range(line, line_end).is_empty()
+			if !flag {
+				count += 1
+			}
+		}
+		for i in (0..count) {
 			let line = result.slice[i]
 			let line_end : i8 = data.find('\n')
 			let kind_end : i8 = data.find(':')
 			let kind = data.range(0, kind_end)
 			let value = data.range(kind_end+1, line_end)
 			let header = Header.from_string(kind, value)
-			let ll_header = ^ref.header
+			headers[i] = header
 		}
-		return ll
+		return headers
 	}
 
-	fn print(self: &HeaderLL) {
-		let copy = ^self
-		let flag = true
-		while flag {
-			copy.header.print()
-			let next = copy.next
-			if next.None {
-				flag = false
-			}else if next.Some(h){
-				copy = ^h
-			}
+	fn print(self: &Headers) {
+		for i in (0..self.size) {
+			let header = self.headers[i]
+			header.print()
 		}
 		return
 	}
@@ -145,7 +123,7 @@ impl HeaderLL {
 struct Request {
 	method: HttpMethod
 	path: String
-	headers: HeaderLL
+	headers: Headers
 	payload: &ui1
 }
 
@@ -161,7 +139,7 @@ impl Request {
 		printf("Path is %s with len %d\n", path.fmt(), path.len)
 		let headers_str = data.range(new_line + 1, data.len - new_line - 1)
 		let out : ui8 = 0
-		let headers = HeaderLL.build(headers_str, &out)
+		let headers = Headers.build(headers_str, &out)
 		let payload = headers_str.range(out, headers_str.len)
 		return new Request { method: method path: path headers: headers payload: payload }
 	}

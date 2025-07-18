@@ -37,3 +37,13 @@ impl AstContext {
         }
     }
 }
+
+struct A {
+    v: i32,
+    b: B,
+}
+
+struct B {
+    v: i32,
+    a: std::rc::Rc<std::cell::RefCell<A>>,
+}
