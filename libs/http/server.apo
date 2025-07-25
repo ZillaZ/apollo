@@ -17,7 +17,8 @@ impl Server {
 			let count : ui8 = 0
 			let socket = ^self.listener.accept()
 			let request_bytes = socket.read(&count)
-			let request = Request.parse(request_bytes)
+			let request_str = String.from_str(request_bytes)
+			let request = Request.parse(request_str)
 			request.headers.print()
 		}
 		return

@@ -529,8 +529,19 @@ pub struct Impl {
     pub methods: Vec<ImplMethod>,
 }
 
-impl From<&ImplMethod> for Function {
-    fn from(value: &ImplMethod) -> Self {
+impl Default for Impl {
+    fn default() -> Self {
+        Self {
+            trait_name: String::new(),
+            target_name: None,
+            generics: Vec::new(),
+            methods: Vec::new(),
+        }
+    }
+}
+
+impl From<&mut ImplMethod> for Function {
+    fn from(value: &mut ImplMethod) -> Self {
         let name = value.name.clone();
         Self {
             name: Name {

@@ -1,4 +1,4 @@
-use super::structs::*;
+use super::{parser::BuildCache, structs::*};
 use std::collections::HashMap;
 
 #[derive(Clone, Debug)]
@@ -32,18 +32,26 @@ impl AstContext {
         for (k, v) in context.structs.iter() {
             self.structs.insert(k.into(), v.clone());
         }
-        for (k, v) in context.variables.iter() {
-            self.variables.insert(k.into(), v.clone());
+        for (k, v) in context.impls.iter() {
+            self.impls.insert(k.into(), v.clone());
+        }
+        for (k, v) in context.enums.iter() {
+            self.enums.insert(k.into(), v.clone());
         }
     }
-}
 
-struct A {
-    v: i32,
-    b: B,
-}
-
-struct B {
-    v: i32,
-    a: std::rc::Rc<std::cell::RefCell<A>>,
+    pub fn extend_cache(&mut self, context: &BuildCache) {
+        for (k, v) in context.functions.iter() {
+            self.functions.insert(k.into(), v.clone());
+        }
+        for (k, v) in context.structs.iter() {
+            self.structs.insert(k.into(), v.clone());
+        }
+        for (k, v) in context.impls.iter() {
+            self.impls.insert(k.into(), v.clone());
+        }
+        for (k, v) in context.enums.iter() {
+            self.enums.insert(k.into(), v.clone());
+        }
+    }
 }

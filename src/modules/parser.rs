@@ -14,6 +14,10 @@ pub struct BuildCache {
     pub fn_deps: HashMap<String, (Vec<Expr>, Vec<Expr>)>,
     pub dt_deps: HashMap<String, (Vec<Expr>, Vec<Expr>)>,
     pub call_stack: HashSet<String>,
+    pub structs: HashMap<String, StructDecl>,
+    pub enums: HashMap<String, Enum>,
+    pub impls: HashMap<String, Vec<Impl>>,
+    pub functions: HashMap<String, Function>,
 }
 
 impl BuildCache {
@@ -22,6 +26,10 @@ impl BuildCache {
             fn_deps: HashMap::new(),
             dt_deps: HashMap::new(),
             call_stack: HashSet::new(),
+            structs: HashMap::new(),
+            enums: HashMap::new(),
+            impls: HashMap::new(),
+            functions: HashMap::new(),
         }
     }
 }
@@ -37,10 +45,6 @@ pub struct Ast {
 
 impl Ast {
     pub fn extend(&mut self, new: &Ast) {
-        self.expressions = vec![new.expressions.clone(), self.expressions.clone()]
-            .into_iter()
-            .flatten()
-            .collect();
         self.context.extend(&new.context);
         self.core_context = new.context.clone();
         extend_imports(&mut self.imports, new);
@@ -58,26 +62,77 @@ impl Ast {
                     for expr in rec_imports.iter() {
                         match expr {
                             Expr::StructDecl(ref decl) => {
+                                let impls = impls
+                                    .iter()
+                                    .filter(|x| {
+                                        if let Expr::Impl(i) = x {
+                                            let name = if let Some(ref name) = i.target_name {
+                                                name.clone()
+                                            } else {
+                                                i.trait_name.clone()
+                                            };
+                                            name == decl.name
+                                        } else {
+                                            false
+                                        }
+                                    })
+                                    .map(|x| {
+                                        if let Expr::Impl(i) = x {
+                                            i.clone()
+                                        } else {
+                                            unreachable!()
+                                        }
+                                    })
+                                    .collect::<Vec<Impl>>();
                                 self.context.structs.insert(decl.name.clone(), decl.clone());
+                                cache.structs.insert(decl.name.clone(), decl.clone());
+                                cache.impls.insert(decl.name.clone(), impls);
                             }
                             Expr::Enum(ref dt) => {
+                                let impls = impls
+                                    .iter()
+                                    .filter(|x| {
+                                        if let Expr::Impl(i) = x {
+                                            let name = if let Some(ref name) = i.target_name {
+                                                name.clone()
+                                            } else {
+                                                i.trait_name.clone()
+                                            };
+                                            name == dt.name
+                                        } else {
+                                            false
+                                        }
+                                    })
+                                    .map(|x| {
+                                        if let Expr::Impl(i) = x {
+                                            i.clone()
+                                        } else {
+                                            unreachable!()
+                                        }
+                                    })
+                                    .collect::<Vec<Impl>>();
                                 self.context.enums.insert(dt.name.clone(), dt.clone());
+                                cache.enums.insert(dt.name.clone(), dt.clone());
+                                cache.impls.insert(dt.name.clone(), impls);
                             }
                             Expr::Function(ref function) => {
                                 self.context
+                                    .functions
+                                    .insert(function.name.name.clone(), function.clone());
+                                cache
                                     .functions
                                     .insert(function.name.name.clone(), function.clone());
                             }
                             _ => unreachable!(),
                         }
                     }
-                    rec_imports.push(Expr::Function(function.clone()));
-                    rec_imports.extend_from_slice(&impls);
-                    rec_imports.extend_from_slice(&self.expressions);
-                    self.expressions = rec_imports;
                     self.context
                         .functions
                         .insert(function.name.name.clone(), function.clone());
+                    cache
+                        .functions
+                        .insert(function.name.name.clone(), function.clone());
+
                     let mut name = None;
                     for implementation in impls.iter() {
                         if let Expr::Impl(ref implementation) = implementation {
@@ -90,20 +145,21 @@ impl Ast {
                         }
                     }
                     if let Some(name) = name {
-                        self.context.impls.insert(
-                            name.clone(),
-                            impls
-                                .clone()
-                                .into_iter()
-                                .map(|x| {
-                                    if let Expr::Impl(i) = x {
-                                        i
-                                    } else {
-                                        unreachable!()
-                                    }
-                                })
-                                .collect(),
-                        );
+                        let collected_impls: Vec<Impl> = impls
+                            .clone()
+                            .into_iter()
+                            .map(|x| {
+                                if let Expr::Impl(i) = x {
+                                    i
+                                } else {
+                                    unreachable!()
+                                }
+                            })
+                            .collect();
+                        self.context
+                            .impls
+                            .insert(name.clone(), collected_impls.clone());
+                        cache.impls.insert(name.clone(), collected_impls);
                     }
                 } else if let Some(dt) = ast.context.structs.clone().get(import) {
                     let (mut rec_imports, mut impls) = (Vec::new(), Vec::new());
@@ -111,92 +167,202 @@ impl Ast {
                         &DataType::StructType(dt.name.clone()),
                         &mut rec_imports,
                         &mut impls,
-                        cache
+                        cache,
                     );
                     for expr in rec_imports.iter() {
                         match expr {
                             Expr::StructDecl(ref decl) => {
+                                let impls = impls
+                                    .iter()
+                                    .filter(|x| {
+                                        if let Expr::Impl(i) = x {
+                                            let name = if let Some(ref name) = i.target_name {
+                                                name.clone()
+                                            } else {
+                                                i.trait_name.clone()
+                                            };
+                                            name == decl.name
+                                        } else {
+                                            false
+                                        }
+                                    })
+                                    .map(|x| {
+                                        if let Expr::Impl(i) = x {
+                                            i.clone()
+                                        } else {
+                                            unreachable!()
+                                        }
+                                    })
+                                    .collect::<Vec<Impl>>();
+
                                 self.context.structs.insert(decl.name.clone(), decl.clone());
+                                cache.structs.insert(decl.name.clone(), decl.clone());
+                                cache.impls.insert(decl.name.clone(), impls);
                             }
                             Expr::Enum(ref dt) => {
+                                let impls = impls
+                                    .iter()
+                                    .filter(|x| {
+                                        if let Expr::Impl(i) = x {
+                                            let name = if let Some(ref name) = i.target_name {
+                                                name.clone()
+                                            } else {
+                                                i.trait_name.clone()
+                                            };
+                                            name == dt.name
+                                        } else {
+                                            false
+                                        }
+                                    })
+                                    .map(|x| {
+                                        if let Expr::Impl(i) = x {
+                                            i.clone()
+                                        } else {
+                                            unreachable!()
+                                        }
+                                    })
+                                    .collect::<Vec<Impl>>();
+
                                 self.context.enums.insert(dt.name.clone(), dt.clone());
+                                cache.enums.insert(dt.name.clone(), dt.clone());
+                                cache.impls.insert(dt.name.clone(), impls);
                             }
                             Expr::Function(ref function) => {
                                 self.context
+                                    .functions
+                                    .insert(function.name.name.clone(), function.clone());
+                                cache
                                     .functions
                                     .insert(function.name.name.clone(), function.clone());
                             }
                             _ => continue,
                         };
                     }
-                    rec_imports.push(Expr::StructDecl(dt.clone()));
-                    rec_imports.extend_from_slice(&impls);
-                    rec_imports.extend_from_slice(&self.expressions);
-                    self.expressions = rec_imports;
                     self.context.structs.insert(dt.name.clone(), dt.clone());
-                    self.context.impls.insert(
-                        dt.name.clone(),
-                        impls
-                            .clone()
-                            .into_iter()
-                            .map(|x| {
-                                if let Expr::Impl(i) = x {
-                                    i
-                                } else {
-                                    unreachable!()
-                                }
-                            })
-                            .collect(),
-                    );
+                    cache.structs.insert(dt.name.clone(), dt.clone());
+
+                    let collected_impls: Vec<Impl> = impls
+                        .clone()
+                        .into_iter()
+                        .map(|x| {
+                            if let Expr::Impl(i) = x {
+                                i
+                            } else {
+                                unreachable!()
+                            }
+                        })
+                        .collect();
+
+                    self.context
+                        .impls
+                        .insert(dt.name.clone(), collected_impls.clone());
+                    cache.impls.insert(dt.name.clone(), collected_impls);
                 } else if let Some(dt) = ast.context.enums.clone().get(import) {
                     let (mut rec_imports, mut impls) = (Vec::new(), Vec::new());
                     ast.get_st_deps(
                         &DataType::StructType(dt.name.clone()),
                         &mut rec_imports,
                         &mut impls,
-                        cache
+                        cache,
                     );
                     for expr in rec_imports.iter() {
                         match expr {
                             Expr::StructDecl(ref decl) => {
+                                let impls = impls
+                                    .iter()
+                                    .filter(|x| {
+                                        if let Expr::Impl(i) = x {
+                                            let name = if let Some(ref name) = i.target_name {
+                                                name.clone()
+                                            } else {
+                                                i.trait_name.clone()
+                                            };
+                                            name == decl.name
+                                        } else {
+                                            false
+                                        }
+                                    })
+                                    .map(|x| {
+                                        if let Expr::Impl(i) = x {
+                                            i.clone()
+                                        } else {
+                                            unreachable!()
+                                        }
+                                    })
+                                    .collect::<Vec<Impl>>();
+
                                 self.context.structs.insert(decl.name.clone(), decl.clone());
+                                cache.structs.insert(decl.name.clone(), decl.clone());
+                                cache.impls.insert(decl.name.clone(), impls);
                             }
                             Expr::Enum(ref dt) => {
+                                let impls = impls
+                                    .iter()
+                                    .filter(|x| {
+                                        if let Expr::Impl(i) = x {
+                                            let name = if let Some(ref name) = i.target_name {
+                                                name.clone()
+                                            } else {
+                                                i.trait_name.clone()
+                                            };
+                                            name == dt.name
+                                        } else {
+                                            false
+                                        }
+                                    })
+                                    .map(|x| {
+                                        if let Expr::Impl(i) = x {
+                                            i.clone()
+                                        } else {
+                                            unreachable!()
+                                        }
+                                    })
+                                    .collect::<Vec<Impl>>();
+
                                 self.context.enums.insert(dt.name.clone(), dt.clone());
+                                cache.enums.insert(dt.name.clone(), dt.clone());
+                                cache.impls.insert(dt.name.clone(), impls);
                             }
                             Expr::Function(ref function) => {
                                 self.context
+                                    .functions
+                                    .insert(function.name.name.clone(), function.clone());
+                                cache
                                     .functions
                                     .insert(function.name.name.clone(), function.clone());
                             }
                             _ => continue,
                         };
                     }
-                    rec_imports.push(Expr::Enum(dt.clone()));
-                    rec_imports.extend_from_slice(&impls);
-                    rec_imports.extend_from_slice(&self.expressions);
-                    self.expressions = rec_imports;
                     self.context.enums.insert(dt.name.clone(), dt.clone());
-                    self.context.impls.insert(
-                        dt.name.clone(),
-                        impls
-                            .clone()
-                            .into_iter()
-                            .map(|x| {
-                                if let Expr::Impl(i) = x {
-                                    i
-                                } else {
-                                    unreachable!()
-                                }
-                            })
-                            .collect(),
-                    );
+                    cache.enums.insert(dt.name.clone(), dt.clone());
+
+                    let collected_impls: Vec<Impl> = impls
+                        .clone()
+                        .into_iter()
+                        .map(|x| {
+                            if let Expr::Impl(i) = x {
+                                i
+                            } else {
+                                unreachable!()
+                            }
+                        })
+                        .collect();
+
+                    self.context
+                        .impls
+                        .insert(dt.name.clone(), collected_impls.clone());
+                    cache.impls.insert(dt.name.clone(), collected_impls);
                 }
             }
         }
     }
 
-    pub fn get_enum_dependencies(&mut self, dt: &Enum, cache: &mut BuildCache) -> (Vec<Expr>, Vec<Expr>) {
+    pub fn get_enum_dependencies(
+        &mut self,
+        dt: &Enum,
+        cache: &mut BuildCache,
+    ) -> (Vec<Expr>, Vec<Expr>) {
         let mut rtn = Vec::new();
         let mut impls = Vec::new();
         for variant in dt.variants.iter() {
@@ -222,11 +388,18 @@ impl Ast {
         (deps, impls)
     }
 
-    pub fn resolve_deps_impls(&mut self, name: &str, impls: &mut Vec<Expr>, cache: &mut BuildCache) -> Vec<Expr> {
+    pub fn resolve_deps_impls(
+        &mut self,
+        name: &str,
+        impls: &mut Vec<Expr>,
+        cache: &mut BuildCache,
+    ) -> Vec<Expr> {
         let mut rtn = Vec::new();
-        if let Some(aimpls) = self.context.impls.clone().get(name) {
-            for implementation in aimpls.iter() {
-                for method in implementation.methods.iter() {
+        if let Some(ref mut aimpls) = self.context.impls.clone().get_mut(name) {
+            println!("THERE IS A IMPL FOR {name} ON CONTEXT");
+            for implementation in aimpls.iter_mut() {
+                for method in implementation.methods.iter_mut() {
+                    method.name = format!("{name}:{}", method.name);
                     let mut function = Function::from(method);
                     function.name.name = format!("{name}:{}", function.name.name);
                     let (e, i) = self.get_fn_dependencies(&function, cache);
@@ -239,7 +412,13 @@ impl Ast {
         rtn
     }
 
-    pub fn get_st_deps(&mut self, dt: &DataType, expr: &mut Vec<Expr>, impls: &mut Vec<Expr>, cache: &mut BuildCache) {
+    pub fn get_st_deps(
+        &mut self,
+        dt: &DataType,
+        expr: &mut Vec<Expr>,
+        impls: &mut Vec<Expr>,
+        cache: &mut BuildCache,
+    ) {
         match dt {
             DataType::StructType(ref name) => {
                 if let Some((e, i)) = cache.dt_deps.get(name) {
@@ -262,11 +441,18 @@ impl Ast {
                     expr.push(Expr::Enum(dt.clone()));
                     self.get_enum_dependencies(dt, cache)
                 };
-                let (ref mut ee, ref mut ii) = cache.dt_deps.entry(name.into()).or_insert((vec![], vec![]));
+                let (ref mut ee, ref mut ii) =
+                    cache.dt_deps.entry(name.into()).or_insert((vec![], vec![]));
                 let clone = ee.clone();
                 let iclone = ii.clone();
-                ee.extend(e.into_iter().filter(|x| clone.iter().find(|y| x == *y).is_none()));
-                ii.extend(i.into_iter().filter(|x| iclone.iter().find(|y| x == *y).is_none()));
+                ee.extend(
+                    e.into_iter()
+                        .filter(|x| clone.iter().find(|y| x == *y).is_none()),
+                );
+                ii.extend(
+                    i.into_iter()
+                        .filter(|x| iclone.iter().find(|y| x == *y).is_none()),
+                );
                 expr.extend_from_slice(&ee);
                 impls.extend_from_slice(&ii);
             }
@@ -274,7 +460,11 @@ impl Ast {
         };
     }
 
-    pub fn get_struct_dependencies(&mut self, dt: &StructDecl, cache: &mut BuildCache) -> (Vec<Expr>, Vec<Expr>) {
+    pub fn get_struct_dependencies(
+        &mut self,
+        dt: &StructDecl,
+        cache: &mut BuildCache,
+    ) -> (Vec<Expr>, Vec<Expr>) {
         let mut rtn = Vec::new();
         let mut impls = Vec::new();
 
@@ -283,123 +473,165 @@ impl Ast {
         }
         let deps = self.resolve_deps_impls(&dt.name, &mut impls, cache);
         rtn.extend_from_slice(&deps);
-        println!("({}) Resolved deps for {} are {:?}", self.namespace, dt.name, rtn.iter().filter(|x| if let Expr::Function(_) = x { true } else { false }).map(|x| if let Expr::Function(f) = x { f.name.name.clone() } else { String::new() } ).collect::<Vec<_>>());
+        println!(
+            "({}) Resolved deps for {} are {:?}",
+            self.namespace,
+            dt.name,
+            rtn.iter()
+                .filter(|x| if let Expr::Function(_) = x {
+                    true
+                } else {
+                    false
+                })
+                .map(|x| if let Expr::Function(f) = x {
+                    f.name.name.clone()
+                } else {
+                    String::new()
+                })
+                .collect::<Vec<_>>()
+        );
         (rtn, impls)
     }
 
-    pub fn get_fn_dependencies(&mut self, function: &Function, cache: &mut BuildCache) -> (Vec<Expr>, Vec<Expr>) {
-        if let Some((e, i)) = cache.fn_deps.get(&function.name.name) {
-            return (e.clone(), i.clone());
+    fn get_from_value(
+        &mut self,
+        value: &mut ValueEnum,
+        rtn: &mut Vec<Expr>,
+        impls: &mut Vec<Expr>,
+        cache: &mut BuildCache,
+    ) {
+        match value {
+            ValueEnum::Range(ref mut range) => match range {
+                RangeValue::Iterable(ref mut iterable) => {
+                    let mut iterable = iterable.borrow_mut();
+                    self.get_from_value(&mut iterable.value, rtn, impls, cache);
+                }
+                RangeValue::Range(ref mut range) => {
+                    let mut range = range.borrow_mut();
+                    self.get_from_value(&mut range.start.value, rtn, impls, cache);
+                    self.get_from_value(&mut range.end.value, rtn, impls, cache);
+                }
+            },
+            ValueEnum::Call(ref call) => {
+                if let Some(function) = self.context.functions.clone().get(&call.name.name) {
+                    let (deps, new_impls) = self.get_fn_dependencies(function, cache);
+                    rtn.extend(deps);
+                    impls.extend(new_impls);
+                    rtn.push(Expr::Function(function.clone()));
+                }
+            }
+            ValueEnum::Constructor(ref constructor) => {
+                let constructor = constructor.borrow();
+                let dt = self.context.structs.get(&constructor.name).unwrap();
+                rtn.push(Expr::StructDecl(dt.clone()));
+            }
+            ValueEnum::FieldAccess(ref mut rc) => {
+                let access = rc.borrow();
+                if let FieldAccessName::Name(ref name) = access.name {
+                    if name.name.chars().next().unwrap().is_uppercase() {
+                        if let Some(dt) = self.context.structs.get(&name.name) {
+                            rtn.push(Expr::StructDecl(dt.clone()))
+                        } else if let Some(dt) = self.context.enums.get(&name.name) {
+                            rtn.push(Expr::Enum(dt.clone()))
+                        } else {
+                            panic!(
+                                "Datatype {} is not defined for {}",
+                                name.name, self.namespace
+                            )
+                        }
+                    }
+                }
+            }
+            ValueEnum::Enum(ref mut val) => {
+                let mut val = val.borrow_mut();
+                let dt = self.context.enums.get(&val.datatype).unwrap();
+                rtn.push(Expr::Enum(dt.clone()));
+                if let Some(ref mut value) = val.inner {
+                    self.get_from_value(&mut value.value, rtn, impls, cache);
+                }
+            }
+            _ => (),
+        };
+    }
+
+    fn get_from_if(
+        &mut self,
+        ast_if: &mut If,
+        rtn: &mut Vec<Expr>,
+        impls: &mut Vec<Expr>,
+        cache: &mut BuildCache,
+    ) {
+        if let Some(ref mut condition) = ast_if.condition {
+            let mut condition = condition.borrow_mut();
+            self.get_from_value(&mut condition.value, rtn, impls, cache);
         }
-        let mut rtn = Vec::new();
-        let mut impls = Vec::new();
-        if cache.call_stack.contains(&function.name.name) {
-            return (rtn, impls);
-        }
-        cache.call_stack.insert(function.name.name.clone());
-        for param in function.args.iter() {
-            if let ParameterType::Type(ref dt) = param.datatype {
-                self.get_st_deps(&dt.datatype, &mut rtn, &mut impls, cache);
+        self.get_block_dependencies(&ast_if.block.borrow(), rtn, impls, cache);
+        if let Some(ref mut otherwise) = ast_if.otherwise {
+            let mut otherwise = otherwise.borrow_mut();
+            match *otherwise {
+                Otherwise::Block(ref block) => {
+                    self.get_block_dependencies(block, rtn, impls, cache)
+                }
+                Otherwise::If(ref mut ast_if) => self.get_from_if(ast_if, rtn, impls, cache),
             }
         }
-        if let Some(ref dt) = function.return_type {
-            self.get_st_deps(&dt.datatype, &mut rtn, &mut impls, cache);
-        }
+    }
 
-        let block = function.block.borrow();
+    pub fn get_block_dependencies(
+        &mut self,
+        block: &Block,
+        rtn: &mut Vec<Expr>,
+        impls: &mut Vec<Expr>,
+        cache: &mut BuildCache,
+    ) {
+        if let Some(mut ret) = block.box_return.clone() {
+            if let Some(ref mut value) = ret.value {
+                self.get_from_value(&mut value.value, rtn, impls, cache);
+            }
+        }
         for expr in block.expr.iter() {
             let mut expr = expr.borrow_mut();
             match *expr {
+                Expr::If(ref mut ast_if) => {
+                    if let Some(ref mut condition) = ast_if.condition {
+                        let mut condition = condition.borrow_mut();
+                        self.get_from_value(&mut condition.value, rtn, impls, cache);
+                    }
+                    self.get_block_dependencies(&ast_if.block.borrow(), rtn, impls, cache);
+                    if let Some(ref mut otherwise) = ast_if.otherwise {
+                        let mut otherwise = otherwise.borrow_mut();
+                        match *otherwise {
+                            Otherwise::Block(ref block) => {
+                                self.get_block_dependencies(block, rtn, impls, cache)
+                            }
+                            Otherwise::If(ref mut ast_if) => {
+                                self.get_from_if(ast_if, rtn, impls, cache)
+                            }
+                        }
+                    }
+                }
+                Expr::For(ref mut floop) => {
+                    self.get_from_value(&mut floop.range.value, rtn, impls, cache);
+                    self.get_block_dependencies(&floop.block, rtn, impls, cache);
+                }
+                Expr::While(ref mut wloop) => {
+                    self.get_from_value(&mut wloop.condition.value, rtn, impls, cache);
+                    self.get_block_dependencies(&wloop.block.borrow(), rtn, impls, cache);
+                }
                 Expr::Call(ref call) => {
                     if let Some(function) = self.context.functions.clone().get(&call.name.name) {
                         let (deps, new_impls) = self.get_fn_dependencies(function, cache);
                         rtn.extend(deps);
                         impls.extend(new_impls);
                         rtn.push(Expr::Function(function.clone()));
-                    } else {
-                        println!(
-                            "Function {} isn't defined. Working on {}. Skipping...",
-                            call.name.name, function.name.name
-                        );
                     }
                 }
                 Expr::Assignment(ref mut assignment) => {
-                    if let ValueEnum::Call(ref call) = assignment.value.value {
-                        if let Some(function) = self.context.functions.clone().get(&call.name.name)
-                        {
-                            let (deps, new_impls) = self.get_fn_dependencies(function, cache);
-                            rtn.extend(deps);
-                            impls.extend(new_impls);
-                            rtn.push(Expr::Function(function.clone()));
-                        } else {
-                            println!(
-                                "Function {} isn't defined. Working on {}. Skipping...",
-                                call.name.name, function.name.name
-                            );
-                        }
-                    }
-                    if let ValueEnum::Constructor(ref constructor) = assignment.value.value {
-                        let constructor = constructor.borrow();
-                        let dt = self.context.structs.get(&constructor.name).unwrap();
-                        rtn.push(Expr::StructDecl(dt.clone()));
-                    }
-                    if let ValueEnum::FieldAccess(ref mut rc) = assignment.value.value {
-                        let access = rc.borrow();
-                        if let FieldAccessName::Name(ref name) = access.name {
-                            if name.name.chars().next().unwrap().is_uppercase() {
-                                if let Some(dt) = self.context.structs.get(&name.name) {
-                                    rtn.push(Expr::StructDecl(dt.clone()))
-                                } else if let Some(dt) = self.context.enums.get(&name.name) {
-                                    rtn.push(Expr::Enum(dt.clone()))
-                                } else {
-                                    panic!(
-                                        "Datatype {} is not defined for {}",
-                                        name.name, self.namespace
-                                    )
-                                }
-                            }
-                        }
-                    }
+                    self.get_from_value(&mut assignment.value.value, rtn, impls, cache)
                 }
                 Expr::Declaration(ref mut decl) => {
                     if let Some(ref mut value) = decl.value {
-                        if let ValueEnum::Call(ref call) = value.value {
-                            if let Some(function) =
-                                self.context.functions.clone().get(&call.name.name)
-                            {
-                                let (deps, new_impls) = self.get_fn_dependencies(function, cache);
-                                rtn.extend(deps);
-                                impls.extend(new_impls);
-                                rtn.push(Expr::Function(function.clone()));
-                            } else {
-                                println!(
-                                    "Function {} isn't defined. Working on {}. Skipping...",
-                                    call.name.name, function.name.name
-                                );
-                            }
-                        }
-                        if let ValueEnum::Constructor(ref constructor) = value.value {
-                            let constructor = constructor.borrow();
-                            let dt = self.context.structs.get(&constructor.name).unwrap();
-                            rtn.push(Expr::StructDecl(dt.clone()));
-                        }
-                        if let ValueEnum::FieldAccess(ref mut rc) = value.value {
-                            let access = rc.borrow();
-                            if let FieldAccessName::Name(ref name) = access.name {
-                                if name.name.chars().next().unwrap().is_uppercase() {
-                                    if let Some(dt) = self.context.structs.get(&name.name) {
-                                        rtn.push(Expr::StructDecl(dt.clone()))
-                                    } else if let Some(dt) = self.context.enums.get(&name.name) {
-                                        rtn.push(Expr::Enum(dt.clone()))
-                                    } else {
-                                        panic!(
-                                            "Datatype {} is not defined for {}",
-                                            name.name, self.namespace
-                                        )
-                                    }
-                                }
-                            }
-                        }
+                        self.get_from_value(&mut value.value, rtn, impls, cache);
                     }
                 }
                 Expr::FieldAccess(ref access) => {
@@ -421,8 +653,37 @@ impl Ast {
                 _ => continue,
             }
         }
+    }
+
+    pub fn get_fn_dependencies(
+        &mut self,
+        function: &Function,
+        cache: &mut BuildCache,
+    ) -> (Vec<Expr>, Vec<Expr>) {
+        if let Some((e, i)) = cache.fn_deps.get(&function.name.name) {
+            return (e.clone(), i.clone());
+        }
+        let mut rtn = Vec::new();
+        let mut impls = Vec::new();
+        if cache.call_stack.contains(&function.name.name) {
+            return (rtn, impls);
+        }
+        cache.call_stack.insert(function.name.name.clone());
+        for param in function.args.iter() {
+            if let ParameterType::Type(ref dt) = param.datatype {
+                self.get_st_deps(&dt.datatype, &mut rtn, &mut impls, cache);
+            }
+        }
+        if let Some(ref dt) = function.return_type {
+            self.get_st_deps(&dt.datatype, &mut rtn, &mut impls, cache);
+        }
+
+        let block = function.block.borrow();
+        self.get_block_dependencies(&block, &mut rtn, &mut impls, cache);
         cache.call_stack.remove(&function.name.name);
-        cache.fn_deps.insert(function.name.name.clone(), (rtn.clone(), impls.clone()));
+        cache
+            .fn_deps
+            .insert(function.name.name.clone(), (rtn.clone(), impls.clone()));
         (rtn, impls)
     }
 }
@@ -1527,7 +1788,10 @@ impl NoirParser {
         for mut pair in pairs {
             match pair.as_rule() {
                 Rule::not => value.not = true,
-                Rule::binary_operation | Rule::unary_operation | Rule::base_value | Rule::bvalue => {
+                Rule::binary_operation
+                | Rule::unary_operation
+                | Rule::base_value
+                | Rule::bvalue => {
                     value.condition = Some(Rc::new(RefCell::new(
                         self.build_single_value(&mut pair, context),
                     )))

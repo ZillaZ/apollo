@@ -63,7 +63,7 @@ impl String {
 		return new SplitResult { slice: rtn count: count }
 	}
 
-	fn empty(self: String) -> bool {
+	fn is_empty(self: String) -> bool {
 		return self.len == 0
 	}
 

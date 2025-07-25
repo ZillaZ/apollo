@@ -44,6 +44,7 @@ fn main() {
     ast.build_imports(&mut cache);
     let gcc = GccContext::new(&context, ast.context.clone());
     let mut imports = HashSet::new();
+    ast.context.extend_cache(&cache);
     gcc.gen_bytecode(
         &mut ast,
         &mut imports,

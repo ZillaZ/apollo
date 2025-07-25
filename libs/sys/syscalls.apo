@@ -35,7 +35,7 @@ syscall
 }
 
 fn bind_socket_ipv4(sock_fd: i8, addr: string) -> i8 {
-	let sock_addr = conv::parse_tcp_addr(addr)
+	let sock_addr =	parse_tcp_addr(addr)
 	let sock_addr_ptr = &sock_addr
 	let addr_len : ui8 = 16
 	let result : i8 = -1

@@ -11,11 +11,11 @@ use std::sync::Arc;
 
 use super::ast_context::AstContext;
 use super::memory::Memory;
-use super::parser::Ast;
+use super::parser::{Ast, BuildCache};
 use super::structs::{
-    self, AssignVar, Condition, Constructor, DataType, Enum, EnumValue, FieldAccessName, ForLoop,
-    Impl, ImplMethod, MacroKind, Name, Overloaded, OverloadedOp, ParameterType, RangeValue, RefOp,
-    StructDecl, Value, ValueEnum,
+    self, Arg, AssignVar, Condition, Constructor, DataType, Enum, EnumValue, FieldAccessName,
+    ForLoop, Impl, ImplMethod, MacroKind, Name, Overloaded, OverloadedOp, ParameterType,
+    RangeValue, RefOp, StructDecl, Value, ValueEnum,
 };
 use super::structs::{Expr, FunctionKind, LibLink, WhileLoop};
 use crate::modules::structs::{ExpandSection, Otherwise, RangeType};
@@ -218,23 +218,6 @@ impl<'a> GccContext<'a> {
             .new_struct_type(None, "ApolloRange", &[start, end]);
         memory.datatypes.insert("#range".into(), range.as_type());
         memory.field_types.insert(start, range_type);
-        let data_type = memory.datatypes.get("string").unwrap().clone();
-        let len_type = memory.datatypes.get("ui8").unwrap().clone();
-        let data_field = self.context.new_field(None, data_type, "data");
-        let len_field = self.context.new_field(None, len_type, "len");
-        let capacity_field = self.context.new_field(None, len_type, "capacity");
-        let string =
-            self.context
-                .new_struct_type(None, "String", &[data_field, len_field, capacity_field]);
-        memory.datatypes.insert("String".into(), string.as_type());
-        let mut string_fields = HashMap::new();
-        string_fields.insert("data".into(), 0);
-        string_fields.insert("len".into(), 1);
-        string_fields.insert("capacity".into(), 2);
-        memory.structs.insert(string, string_fields);
-        memory.field_types.insert(data_field, data_type);
-        memory.field_types.insert(len_field, len_type);
-        memory.field_types.insert(capacity_field, len_type);
     }
 
     fn gen_primitive_types(&'a self, memory: &mut Memory<'a>) {
@@ -434,6 +417,9 @@ impl<'a> GccContext<'a> {
     }
 
     fn parse_enum(&'a self, ast_enum: &mut Enum, memory: &mut Memory<'a>) {
+        if memory.datatypes.contains_key(&ast_enum.name) {
+            return;
+        }
         let kind_type = *memory.datatypes.get("ui1").unwrap();
         let kind_field = self.context.new_field(None, kind_type, "kind");
         let mut field_index = 1;
@@ -500,7 +486,6 @@ impl<'a> GccContext<'a> {
         ast: &mut Ast,
         memory: &mut Memory<'a>,
     ) {
-        let mut methods = HashMap::new();
         let (target_type, target_name) = if let Some(ref target_name) = implementation.target_name {
             (
                 memory.datatypes.get(target_name).unwrap().clone(),
@@ -516,123 +501,49 @@ impl<'a> GccContext<'a> {
                 implementation.trait_name.clone(),
             )
         };
-        let restore = memory.datatypes.clone();
-        if implementation.target_name.is_some() {
-            let traits = memory
-                .traits
-                .get(&implementation.trait_name)
-                .unwrap()
-                .clone();
-            for (generic, value) in implementation.generics.iter() {
-                if !traits.generics.contains(generic) {
-                    panic!(
-                        "Unknown generic type {} for trait {}",
-                        generic, implementation.trait_name
-                    );
-                }
-                let dt = memory.datatypes.get(value).unwrap();
-                memory.datatypes.insert(generic.into(), *dt);
-            }
+        let has_impl = {
+            let implementations = memory.impls.entry(target_type).or_default();
+            implementations.contains_key(&implementation.trait_name)
+        };
+        if !has_impl {
+            self.impl_signature(implementation, memory);
         }
+        let mut implementations = memory.impls.clone();
+        let implementations = implementations.get_mut(&target_type).unwrap();
+        let impl_map = implementations
+            .entry(implementation.trait_name.clone())
+            .or_default();
         for method in implementation.methods.iter_mut() {
-            if implementation.target_name.is_some() {
-                let _trait_method = memory
-                    .traits
-                    .get(&implementation.trait_name)
-                    .unwrap()
-                    .clone()
-                    .methods
-                    .iter_mut()
-                    .find(|x| x.name == method.name)
-                    .expect(&format!(
-                        "No method {} was declared for trait {}",
-                        method.name, implementation.trait_name
-                    ));
-                let needs_trait = method
-                    .params
-                    .iter()
-                    .find(|x| {
-                        if let ParameterType::Implements(_) = x.datatype {
-                            true
-                        } else {
-                            false
-                        }
-                    })
-                    .is_some();
-                if needs_trait {
-                    memory.impl_with_traits.insert(
-                        method.name.clone(),
-                        (implementation.trait_name.clone(), method.clone()),
-                    );
-                    methods.insert(method.name.clone(), *memory.functions.get("main").unwrap());
-                    continue;
-                }
+            let fn_name = if method.name.contains(":") {
+                method.name.clone()
+            } else {
+                format!("{target_name}:{}", method.name)
+            };
+            let function = impl_map.get(&fn_name).expect(&format!(
+                "Method {} does not exits for {:?} implementation",
+                fn_name, target_type
+            ));
+            let mut params = HashMap::new();
+            for i in 0..function.get_param_count() {
+                let param = function.get_param(i as i32);
+                let ast_param = &method.params[i];
+                params.insert(ast_param.name.name.clone(), param.to_lvalue());
             }
-            let fmt = format!(".{}:{}", implementation.trait_name, method.name);
-            let copy = memory.function_scope.clone();
-            memory.function_scope = fmt.clone();
-            let datatype = if let Some(ref mut dt) = method.datatype {
-                self.parse_datatype(dt, memory)
-            } else {
-                <() as Typeable>::get_type(self.context)
-            };
-            let fn_name = method.name.clone();
-            let (function, params) = if let Some(map) = memory.impl_methods.get(&fn_name) {
-                if let Some(implementation) = map.get(&target_type) {
-                    let params = (0..implementation.get_param_count())
-                        .map(|x| implementation.get_param(x as i32))
-                        .collect();
-                    (*implementation, params)
-                } else {
-                    let params = self.setup_impl_args(fmt.clone(), method, memory);
-                    (
-                        self.context.new_function(
-                            None,
-                            gccjit::FunctionType::Internal,
-                            datatype,
-                            &params,
-                            &fn_name,
-                            false,
-                        ),
-                        params,
-                    )
-                }
-            } else {
-                let params = self.setup_impl_args(fmt.clone(), method, memory);
-                (
-                    self.context.new_function(
-                        None,
-                        gccjit::FunctionType::Internal,
-                        datatype,
-                        &params,
-                        &fn_name,
-                        false,
-                    ),
-                    params,
-                )
-            };
-            let entry = memory
+            let mut block = function.new_block(format!("{}_start", method.name));
+            memory
                 .variables
-                .entry(fmt.clone())
-                .or_insert(HashMap::new());
-            for i in 0..method.params.len() {
-                let m_param = &method.params[i];
-                let param = params[i];
-                entry.insert(m_param.name.name.clone(), param.to_lvalue());
-            }
-            let mut new_block = function.new_block(self.uuid());
-            self.parse_block(&mut method.body, &mut new_block, memory, ast);
-            memory.function_scope = copy;
-            methods.insert(method.name.clone(), function);
-            let entry = memory
-                .impl_methods
                 .entry(method.name.clone())
-                .or_insert(HashMap::new());
-            entry.insert(target_type, function);
+                .or_insert(params);
+            let copy = memory.function_scope.clone();
+            memory.function_scope = fn_name.clone();
+            self.parse_block(&mut method.body, &mut block, memory, ast);
+            memory.function_scope = copy;
+            let entry = memory.impl_methods.entry(fn_name.clone()).or_default();
+            entry.insert(target_type, *function);
+            impl_map.insert(fn_name.clone(), *function);
         }
-        memory.datatypes = restore;
-        let entry = memory.impls.entry(target_type).or_insert(HashMap::new());
-        entry.insert(implementation.trait_name.clone(), methods);
+        let implementations = memory.impls.entry(target_type).or_default();
+        implementations.insert(implementation.trait_name.clone(), impl_map.to_owned());
     }
 
     fn get_rc_value<T: Sized + Clone>(&self, rc: &mut Rc<RefCell<T>>) -> Option<T> {
@@ -641,7 +552,6 @@ impl<'a> GccContext<'a> {
 
     fn inherit_tail_expr(&'a self, old: &Block<'a>, new: &Block<'a>, memory: &mut Memory<'a>) {
         if let Some(tail_expr) = memory.block_tail_expr.get(old) {
-            println!("Block {:?} is inheriting from {:?}", new, old);
             memory.block_tail_expr.insert(*new, tail_expr.clone());
             memory.block_tail_expr.remove_entry(old);
         }
@@ -915,17 +825,68 @@ impl<'a> GccContext<'a> {
             .compile_to_file(gccjit::OutputKind::Assembler, format!("{out}.s"));
     }
 
-    pub fn build_context(&'a self, block: &mut Block<'a>, ast: &mut Ast, memory: &mut Memory<'a>) {
-        for (_, dt) in ast.context.structs.clone().iter_mut() {
+    fn impl_signature(&'a self, implementation: &mut Impl, memory: &mut Memory<'a>) {
+        let dt_name = if let Some(ref name) = implementation.target_name {
+            name.clone()
+        } else {
+            implementation.trait_name.clone()
+        };
+        let target_dt = memory.datatypes.clone();
+        let target_dt = target_dt.get(&dt_name).unwrap();
+        for method in implementation.methods.iter_mut() {
+            let dt = if let Some(ref mut dt) = method.datatype {
+                self.parse_datatype(dt, memory)
+            } else {
+                <() as Typeable>::get_type(&self.context)
+            };
+            let parameters = self.parse_args(&mut method.params, memory);
+            let function = self.context.new_function(
+                None,
+                gccjit::FunctionType::Internal,
+                dt,
+                &parameters,
+                method.name.replace(":", "_"),
+                false,
+            );
+            let entry = memory.impl_methods.entry(method.name.clone()).or_default();
+            entry.insert(*target_dt, function);
+            let entry = memory.impls.entry(*target_dt).or_default();
+            let entry = entry.entry(implementation.trait_name.clone()).or_default();
+            entry.insert(method.name.clone(), function);
+        }
+    }
+
+    pub fn build_context(&'a self, _block: &mut Block<'a>, ast: &mut Ast, memory: &mut Memory<'a>) {
+        println!("STARTED BUILDING CONTEXT {} {:?}", ast.context.impls.get("String").unwrap().len(), ast.context.impls.get("String").unwrap().iter().map(|x| &x.methods).flatten().map(|x| &x.name).collect::<Vec<_>>());
+        for (_name, dt) in ast.context.structs.clone().iter_mut() {
+            println!("BUILDING STRUCT {_name}");
             self.parse_struct(dt, memory);
         }
-        for (_, dt) in ast.context.enums.clone().iter_mut() {
+        for (_name, dt) in ast.context.enums.clone().iter_mut() {
+            println!("BUILDING ENUM {_name}");
             self.parse_enum(dt, memory);
         }
-        for (name, implementations) in ast.context.impls.clone().iter_mut() {
-            println!("IMPLEMENTATION FOR {name}");
+        println!("STARTED BUILDING IMPLS");
+        let mut parsed = HashSet::new();
+        for (_name, implementations) in ast.context.impls.clone().iter_mut() {
+            println!("IMPL FOR {_name}");
             for implementation in implementations.iter_mut() {
-                self.parse_impl(implementation, block, ast, memory);
+                if parsed.contains(&implementation.trait_name) { continue };
+                parsed.insert(implementation.trait_name.clone());
+                self.impl_signature(implementation, memory);
+            }
+        }
+        parsed.clear();
+        println!("FINISHED IMPLS");
+        for (_, function) in ast.context.functions.clone().iter_mut() {
+            self.parse_function_signature(function, memory, ast);
+        }
+        for (_name, implementations) in ast.context.impls.clone().iter_mut() {
+            println!("IMPL FOR {_name}");
+            for implementation in implementations.iter_mut() {
+                if parsed.contains(&implementation.trait_name) { continue };
+                parsed.insert(implementation.trait_name.clone());
+                self.parse_impl(implementation, _block, ast, memory);
             }
         }
         for (_, function) in ast.context.functions.clone().iter_mut() {
@@ -943,6 +904,7 @@ impl<'a> GccContext<'a> {
         gen_types: bool,
         out: String,
     ) {
+        /*
         println!(
             "Functions: {:?}",
             ast.context
@@ -951,6 +913,8 @@ impl<'a> GccContext<'a> {
                 .map(|(k, _)| k)
                 .collect::<Vec<_>>()
         );
+         *
+         */
         let mut block = self.setup_entry_point(imports, ast, memory, gen_types);
         self.build_context(&mut block, ast, memory);
         self.parse_expression(ast, memory, &mut block);
@@ -977,17 +941,19 @@ impl<'a> GccContext<'a> {
         let mut fields = Vec::new();
         let mut counter = 0;
         let mut new_struct = HashMap::new();
+        /*
         println!(
             "Struct {} has {} fields",
             r#struct.name,
             r#struct.fields.len()
         );
+         *
+         */
 
         for field in r#struct.fields.iter_mut() {
             new_struct.insert(field.name.clone(), counter);
             counter += 1;
             let field = self.parse_field(field, memory);
-            println!("Field {counter} is {:?}", field);
             fields.push(field);
         }
         let mut struct_type = if let Some(dt) = memory.datatypes.get(&r#struct.name) {
@@ -1023,116 +989,6 @@ impl<'a> GccContext<'a> {
         memory
             .datatypes
             .insert(r#struct.name.clone(), struct_type.as_type());
-    }
-
-    fn build_imports(
-        &'a self,
-        all_imports: &mut HashSet<String>,
-        memory: &mut Memory<'a>,
-        ast: &mut Ast,
-    ) {
-        fn recursive_descent(node: &structs::Namespace, acc: &mut Vec<String>, str_acc: String) {
-            for namespace in node.next.iter() {
-                let namespace = namespace.as_ref();
-                if !namespace.next.is_empty() {
-                    recursive_descent(namespace, acc, format!("{str_acc}::{}", namespace.name));
-                } else {
-                    let name = format!("{}::{}", str_acc, namespace.name.clone());
-                    if !acc.contains(&name) {
-                        acc.push(name);
-                    }
-                }
-            }
-        }
-        let imports = &mut ast.imports;
-        for ((import_name, import), ref mut ast) in imports.iter_mut() {
-            let mut names = vec![];
-            recursive_descent(&import.namespace, &mut names, import.namespace.name.clone());
-            for name in names {
-                if all_imports.contains(import_name) {
-                    continue;
-                }
-                all_imports.insert(import_name.clone());
-                let imported_ast = Rc::get_mut(ast).unwrap();
-                let mut new_memory = Memory::new(name.clone());
-                new_memory.datatypes = memory.datatypes.clone();
-                new_memory.structs = memory.structs.clone();
-                new_memory.field_types = memory.field_types.clone();
-                self.gen_bytecode(
-                    imported_ast.get_mut(),
-                    all_imports,
-                    &mut new_memory,
-                    false,
-                    false,
-                    false,
-                    "".into(),
-                );
-                self.push_to_module(&import, memory, &mut new_memory);
-            }
-        }
-    }
-
-    fn push_to_module(
-        &'a self,
-        import: &structs::Import,
-        memory: &mut Memory<'a>,
-        new_memory: &mut Memory<'a>,
-    ) {
-        fn recursive_descent(node: &structs::Namespace, acc: &mut Vec<String>) {
-            for namespace in node.next.iter() {
-                let namespace = namespace.as_ref();
-                if !namespace.next.is_empty() {
-                    recursive_descent(namespace, acc);
-                } else {
-                    let name = format!("{}::{}", node.name, namespace.name.clone());
-                    if !acc.contains(&name) {
-                        acc.push(name);
-                    }
-                }
-            }
-        }
-        let mut imports = vec![];
-        recursive_descent(&import.namespace, &mut imports);
-        new_memory.impls.iter().for_each(|(dt, map)| {
-            memory.impls.insert(*dt, map.clone());
-        });
-        new_memory.impl_methods.iter().for_each(|(name, function)| {
-            memory.impl_methods.insert(name.into(), function.clone());
-        });
-        for ref import in imports {
-            let name = import.split("::").last().unwrap();
-            if let Some(function) = new_memory.functions.get(name) {
-                memory.functions.insert(import.into(), *function);
-            }
-            if let Some(datatype) = new_memory.datatypes.get(name) {
-                memory.datatypes.insert(import.into(), *datatype);
-                if let Some(ref struct_type) = datatype.is_struct() {
-                    let fields = new_memory.structs.get(struct_type).unwrap();
-                    memory.structs.insert(*struct_type, fields.clone());
-                    for i in 0..struct_type.get_field_count() {
-                        let field = struct_type.get_field(i as i32);
-                        let field_type = new_memory.field_types.get(&field).unwrap();
-                        memory.field_types.insert(field, *field_type);
-                    }
-                }
-                if let Some(_) = new_memory.trait_types.get(datatype) {
-                    memory.trait_types.insert(*datatype, import.into());
-                }
-            }
-            if let Some(traits) = new_memory.traits.get(name) {
-                memory.traits.insert(import.into(), traits.clone());
-            }
-            if let Some(function_address) = new_memory.function_addresses.get(name) {
-                memory
-                    .function_addresses
-                    .insert(import.into(), *function_address);
-            }
-            if let Some(expandable_macro) = new_memory.expandable_macros.get(name) {
-                memory
-                    .expandable_macros
-                    .insert(import.into(), expandable_macro.clone());
-            }
-        }
     }
 
     fn parse_overloaded(
@@ -1489,18 +1345,11 @@ impl<'a> GccContext<'a> {
                         let struct_fields = memory
                             .structs
                             .get(&field)
-                            .expect(&format!("No fields for {:?}", field));
+                            .expect(&format!("Variable {:?} is not a struct, it has type {:?}. Tried to access field {}", val, field, name.name));
                         let field_index = struct_fields.get(&name.name).expect(&format!(
                             "Field {} does not exist on struct {:?}",
                             name.name, field
                         ));
-                        let field = field.get_field(*field_index);
-                        GccValues::L(val.access_field(None, field))
-                    } else if let Some(field) = val.to_rvalue().get_type().is_struct() {
-                        let struct_fields = memory.structs.get(&field).unwrap();
-                        let field_index = struct_fields
-                            .get(&name.name)
-                            .expect(&format!("Struct field {} is undefined", name.name));
                         let field = field.get_field(*field_index);
                         GccValues::L(val.access_field(None, field))
                     } else {
@@ -1843,8 +1692,8 @@ impl<'a> GccContext<'a> {
         if expandable {
             return None;
         }
-        if memory.functions.contains_key(&function.name.name) {
-            return None;
+        if let Some(function) = memory.functions.get(&function.name.name) {
+            return Some(*function);
         }
         let return_type = match function.return_type {
             Some(ref mut data_type) => self.parse_datatype(data_type, memory),
@@ -2234,18 +2083,26 @@ impl<'a> GccContext<'a> {
             vec![field.clone()]
         };
         args.extend(partial_args);
-        let mut fn_name = call.name.name.clone();
+        let (dt_name, _) = memory
+            .datatypes
+            .iter()
+            .find(|x| *x.1 == dt)
+            .expect(&format!("Datatype {:?} does not exists", dt));
+        let mut fn_name = format!("{dt_name}:{}", call.name.name.clone());
         let to_impl = if let Some(to_impl) = memory.impl_with_traits.get(&call.name.name) {
             fn_name = self.function_name(&to_impl.1.params.iter().collect(), &call.name.name);
             Some(to_impl.clone())
         } else {
             None
         };
+        /*
         println!(
             "Impls for {:?}: {:?}",
             dt,
             memory.impl_methods.get(&fn_name)
         );
+         *
+         */
         let method = if let Some(impl_map) = memory.impl_methods.clone().get(&fn_name) {
             let method = impl_map.get(&dt);
             if method.is_none() {
@@ -2292,13 +2149,17 @@ impl<'a> GccContext<'a> {
         } else {
             let aux = memory.datatypes.clone();
             let (name, _) = aux.iter().find(|(_, v)| **v == dt).unwrap();
-            let impls = ast.context.impls.get(name).unwrap();
+            let impls = ast
+                .context
+                .impls
+                .get(name)
+                .expect(&format!("No implementations found for type {name}"));
             let method = impls
                 .iter()
                 .map(|x| &x.methods)
                 .flatten()
-                .find(|x| x.name == *name)
-                .expect(&format!("Method {} not found for {:?}", name, dt));
+                .find(|x| x.name == *fn_name)
+                .expect(&format!("Method {} not found for {:?}", fn_name, dt));
             let mut method = method.clone();
             let params = self.parse_args(&mut method.params, memory);
             let dt = if let Some(dt) = method.datatype {
@@ -2311,7 +2172,7 @@ impl<'a> GccContext<'a> {
                 gccjit::FunctionType::Internal,
                 dt,
                 &params,
-                name,
+                fn_name,
                 false,
             )
         };
@@ -2491,14 +2352,14 @@ impl<'a> GccContext<'a> {
         let left_is_ptr = self.is_pointer(&left_type, memory);
         let right_is_ptr = self.is_pointer(&rtn.get_type(), memory);
         if !left_type.is_compatible_with(rtn.get_type())
-            && left_type.is_compatible_with(*memory.datatypes.get("Any").unwrap())
+            && (left_type.is_compatible_with(*memory.datatypes.get("Any").unwrap()) || left_is_ptr)
             && !self.is_pointer(&rtn.get_type(), memory)
         {
             rtn = self
                 .context
                 .new_cast(None, right.get_reference(), left_type);
         } else if !left_type.is_compatible_with(rtn.get_type())
-            && ((left_is_ptr && !right_is_ptr) || (!left_is_ptr && right_is_ptr))
+            && (!left_is_ptr && right_is_ptr)
         {
             rtn = self
                 .context
