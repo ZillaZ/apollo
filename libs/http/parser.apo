@@ -28,8 +28,8 @@ enum HttpMethod {
 
 impl HttpMethod {
     fn parse(data: String) -> HttpMethod {
-        let new_line : i8 = data.find('\n')
-        let method_str = data.range(0, new_line - 1)
+        let space : i8 = data.find(' ')
+        let method_str = data.range(0, space)
         if "GET" == method_str.data {
             return HttpMethod.Get
         }else if "POST" == method_str.data {
@@ -46,88 +46,69 @@ impl HttpMethod {
             return HttpMethod.Options
         }
     }
-}
-
-enum Header {
-    ContentType(String)
-    Authentication(AuthKind)
-    ContentLength(ui8)
-}
-
-impl Header {
-    fn print(self: Header) {
-        if self.ContentType(ct) {
-            printf("Content-Type: %s\n", ct)
-        }else if self.Authentication(auth) {
-            printf("Auth\n")
-        }else if self.ContentLength(len) {
-            printf("Content-Length: %d\n", len)
+    fn print(self: HttpMethod) {
+        if self.Get {
+            printf("GET\n")
+        }else if self.Post {
+            printf("POST\n")
+        }else{
+            printf("Not implemented yet\n")
         }
         return
     }
+}
 
-    fn from_string(kind: String, value: String) -> Header {
-        if "Content-Type" == kind.data {
-            return Header.ContentType(value)
-        }else if "Content-Length" == kind.data {
-            let conv = value.to_int() as ui8
-            return Header.ContentLength(conv)
-        }else if "Authentication" == kind.data {
-            return Header.Authentication(AuthKind.from_str(value))
-        }
-        return Header.ContentLength(0 as ui8)
+struct Header {
+key: String
+value: String
+}
+
+impl Header {
+    fn print(self: &Header) {
+        printf("%s: %s\n", self.key.fmt(), self.value.fmt())
+        return
+    }
+
+    fn from_string(key: String, value: String) -> Header {
+        return new Header { key: key value: value }
     }
 }
 
-enum Option {
-	Some(Header)
-	None
-}
-
-struct HeaderLL {
-	header: Header
-	next: Option
-}
-
 struct Headers {
-    headers: Option
+    headers: &Header
     size: i4
 }
 
 impl Headers {
     fn build(data: String, out: &ui8) -> Headers {
         let result = data.split('\n')
-		let head = Option.None
-        let next = &head
         let count = 0
         let flag = false
         for i in (0..result.count) {
             let line = result.slice[i]
-            flag = line.is_empty()
+            if !flag {
+                flag = line.is_empty()
+                printf("Line %s | Is empty: %d\n", flag)
+            }
             if !flag {
                 count += 1
             }
         }
+        let headers: &Header = malloc(count * size_of(Header))
         for i in (0..count) {
             let line = result.slice[i]
-            let line_end : i8 = data.find('\n')
-            let kind_end : i8 = data.find(':')
-            let kind = data.range(0, kind_end)
-            let value = data.range(kind_end+1, line_end)
+            let kind_end : i8 = line.find(':')
+            let kind = line.range(0, kind_end)
+            let value = line.range(kind_end+1, line.len)
             let header = Header.from_string(kind, value)
-			let deref = ^next
-			if deref.None {
-			}
-			if deref.Some(header) {
-			}
+            headers[i] = header
         }
-        return new Headers { headers: head size: count }
+        return new Headers { headers: headers size: count }
     }
 
     fn print(self: &Headers) {
         for i in (0..self.size) {
-            let header = self.headers[i]
-            header.print()
+            self.headers[i].print()
         }
         return
     }
@@ -136,7 +117,7 @@ impl Headers {
 struct Request {
     method: HttpMethod
     path: String
-    headers: &Headers
+    headers: Headers
     payload: &ui1
 }
 
@@ -145,13 +126,13 @@ impl Request {
         let new_line = data.find('\n')
         let method = HttpMethod.parse(data)
         let path_start : i8 = data.find(' ')
-        let sub = data.range(path_start , new_line)
-        let path_end = sub.find(' ')
+        let sub = data.range(path_start, new_line)
+        let path_end = sub.find(' ') + path_start
         let path = data.range(path_start, path_end)
-        printf("Path is %s with len %d\n", path.fmt(), path.len)
+        let first_line = data.range(0, new_line)
         let headers_str = data.range(new_line + 1, data.len - new_line - 1)
         let out : ui8 = 0
-        let headers : &Headers = Headers.build(headers_str, &out)
+        let headers : Headers = Headers.build(headers_str, &out)
         let payload = headers_str.range(out, headers_str.len)
         return new Request { method: method path: path headers: headers payload: payload.data }
     }

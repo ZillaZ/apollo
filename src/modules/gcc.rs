@@ -30,6 +30,21 @@ pub enum GccValues<'a> {
 }
 
 impl<'a> GccValues<'a> {
+    pub fn get_alignment(&self) -> i32 {
+        match self {
+            GccValues::L(lvalue) => lvalue.get_alignment(),
+            GccValues::R(rvalue) => rvalue.dereference(None).get_alignment(),
+            _ => 0
+        }
+    }
+    pub fn get_type(&self) -> Type<'a> {
+        match self {
+            GccValues::L(lvalue) => lvalue.to_rvalue().get_type(),
+            GccValues::R(rvalue) => rvalue.get_type(),
+            GccValues::Type(dt) => *dt,
+            _ => unreachable!()
+        }
+    }
     pub fn rvalue(&self) -> RValue<'a> {
         match self {
             GccValues::L(lvalue) => lvalue.to_rvalue(),
@@ -520,7 +535,7 @@ impl<'a> GccContext<'a> {
                 format!("{target_name}:{}", method.name)
             };
             let function = impl_map.get(&fn_name).expect(&format!(
-                "Method {} does not exits for {:?} implementation",
+                "Method {} not found for {:?} implementation",
                 fn_name, target_type
             ));
             let mut params = HashMap::new();
@@ -532,7 +547,7 @@ impl<'a> GccContext<'a> {
             let mut block = function.new_block(format!("{}_start", method.name));
             memory
                 .variables
-                .entry(method.name.clone())
+                .entry(fn_name.clone())
                 .or_insert(params);
             let copy = memory.function_scope.clone();
             memory.function_scope = fn_name.clone();
@@ -812,7 +827,8 @@ impl<'a> GccContext<'a> {
         self.context.add_driver_option("-march=x86-64-v4");
         self.context.dump_to_file(format!("{out}.c"), false);
         if is_debug {
-        } else {
+            self.context.set_optimization_level(gccjit::OptimizationLevel::None);
+        }else{
             self.context
                 .set_optimization_level(gccjit::OptimizationLevel::Aggressive);
         }
@@ -840,24 +856,29 @@ impl<'a> GccContext<'a> {
                 <() as Typeable>::get_type(&self.context)
             };
             let parameters = self.parse_args(&mut method.params, memory);
+            let fn_name = if method.name.contains(":") {
+                method.name.clone()
+            }else{
+                format!("{dt_name}:{}", method.name)
+            };
             let function = self.context.new_function(
                 None,
                 gccjit::FunctionType::Internal,
                 dt,
                 &parameters,
-                method.name.replace(":", "_"),
+                fn_name.replace(":", "_"),
                 false,
             );
-            let entry = memory.impl_methods.entry(method.name.clone()).or_default();
+            let entry = memory.impl_methods.entry(fn_name.clone()).or_default();
             entry.insert(*target_dt, function);
             let entry = memory.impls.entry(*target_dt).or_default();
             let entry = entry.entry(implementation.trait_name.clone()).or_default();
-            entry.insert(method.name.clone(), function);
+            entry.insert(fn_name.clone(), function);
         }
     }
 
     pub fn build_context(&'a self, _block: &mut Block<'a>, ast: &mut Ast, memory: &mut Memory<'a>) {
-        println!("STARTED BUILDING CONTEXT {} {:?}", ast.context.impls.get("String").unwrap().len(), ast.context.impls.get("String").unwrap().iter().map(|x| &x.methods).flatten().map(|x| &x.name).collect::<Vec<_>>());
+        println!("STARTED BUILDING CONTEXT {} {:?}", ast.context.impls.get("char").unwrap().len(), ast.context.impls.get("char").unwrap().iter().map(|x| &x.methods).flatten().map(|x| &x.name).collect::<Vec<_>>());
         for (_name, dt) in ast.context.structs.clone().iter_mut() {
             println!("BUILDING STRUCT {_name}");
             self.parse_struct(dt, memory);
@@ -1994,14 +2015,14 @@ impl<'a> GccContext<'a> {
     }
 
     fn size_of(&'a self, value: &GccValues<'a>, memory: &mut Memory<'a>) -> i32 {
-        let dt = value.rvalue().get_type();
-        let alignment = value.dereference().get_alignment();
+        let dt = value.get_type();
+        let alignment = value.get_alignment();
         let size = if let Some(struct_type) = dt.is_struct() {
             let mut total_size = 0;
             for i in 0..struct_type.get_field_count() {
                 let field = struct_type.get_field(i as i32);
-                let field = value.dereference().access_field(None, field);
-                total_size += self.size_of(&GccValues::L(field), memory);
+                let dt = memory.field_types.get(&field).unwrap();
+                total_size += self.size_of(&GccValues::Type(*dt), memory);
             }
             total_size + alignment
         } else {
@@ -2351,20 +2372,18 @@ impl<'a> GccContext<'a> {
         }
         let left_is_ptr = self.is_pointer(&left_type, memory);
         let right_is_ptr = self.is_pointer(&rtn.get_type(), memory);
-        if !left_type.is_compatible_with(rtn.get_type())
-            && (left_type.is_compatible_with(*memory.datatypes.get("Any").unwrap()) || left_is_ptr)
-            && !self.is_pointer(&rtn.get_type(), memory)
+        if (left_type.is_compatible_with(*memory.datatypes.get("Any").unwrap()) || left_is_ptr)
+            && !right_is_ptr
         {
             rtn = self
                 .context
                 .new_cast(None, right.get_reference(), left_type);
-        } else if !left_type.is_compatible_with(rtn.get_type())
-            && (!left_is_ptr && right_is_ptr)
+        } else if !left_is_ptr && right_is_ptr
         {
             rtn = self
                 .context
-                .new_bitcast(None, right.get_reference(), left_type);
-        } else if !left_type.is_compatible_with(rtn.get_type()) {
+                .new_cast(None, right.dereference(), left_type);
+        } else {
             rtn = self.context.new_cast(None, rtn, left_type);
         }
         rtn

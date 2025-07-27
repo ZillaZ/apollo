@@ -730,7 +730,6 @@ pub struct NoirParser {
 impl NoirParser {
     pub fn new() -> Self {
         let pratt_parser = PrattParser::new()
-            .op(Op::prefix(Rule::neg))
             .op(Op::infix(Rule::bt_left, Assoc::Left)
                 | Op::infix(Rule::bt_right, Assoc::Left)
                 | Op::infix(Rule::bt_or, Assoc::Left)
@@ -747,7 +746,7 @@ impl NoirParser {
                 | Op::infix(Rule::lte, Assoc::Left)
                 | Op::infix(Rule::cmp_eq, Assoc::Left))
             .op(Op::infix(Rule::modulo, Assoc::Left))
-            .op(Op::prefix(Rule::not));
+            .op(Op::prefix(Rule::not) | Op::prefix(Rule::neg));
         Self { pratt_parser }
     }
 

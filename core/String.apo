@@ -24,10 +24,10 @@ impl String {
 	}
 
 	fn range(self: &String, start: ui8, end: ui8) -> String {
-		let rtn : &char = malloc(end - start)
-		for i in (start..end) {
-			rtn[i] = self.data[i]
-		}
+		let rtn : &char = malloc(1 + end - start)
+		let offset : &char = self.data[start]
+		memcpy(rtn, offset, end - start)
+		rtn[end] = '\0'
 		return new String { data: rtn len: end - start capacity: end - start }
 	}
 
@@ -47,24 +47,58 @@ impl String {
 				return i
 			}
 		}
+		printf("Target %c not found\n", target)
 		return -1
 	}
 
 	fn split(self: &String, target: char) -> SplitResult {
 		let count : ui8 = self.count(target)
-		let rtn : &String = malloc(24 * count)
+		let rtn : &String = malloc(size_of(String) * count)
 		let offset : ui8 = 0
-		let raw = self.data
 		for i in (0..count) {
-			let end = self.find(target)
-			rtn[i] = self.range(0, end)
-			self.data = self.data[end]
+			let aux = self.range(offset, self.len)
+			let end = aux.find(target)
+			if end != (-1) {
+				rtn[i] = aux.range(0, end)
+				offset += end + 1
+			}
+			aux.free()
 		}
 		return new SplitResult { slice: rtn count: count }
 	}
 
-	fn is_empty(self: String) -> bool {
-		return self.len == 0
+	fn is_empty(self: &String) -> bool {
+		let clone = self.clone()
+		clone.trim()
+		printf("Len %d\n", clone.len)
+		return (clone.len == 0)
+	}
+
+	fn clone(self: &String) -> String {
+		let alloc: &char = malloc(self.len)
+		memcpy(alloc, self.data, self.len)
+		return new String { data: alloc len: self.len capacity: self.capacity }
+	}
+
+	fn trim(self: &String) {
+		let flag = false
+		let l = 0
+		while (l < self.len) and (!flag) {
+			if self.data[l].is_whitespace() { l += 1 } else { flag = true }
+		}
+		let r = self.len
+		while (r > 0) and (!flag) {
+			if self.data[r].is_whitespace() { r -= 1 } else { flag = true }
+		}
+		let alloc: &char = malloc(r - l + 1)
+		let aux : &char = self.data[l]
+		memcpy(alloc, aux, r - l)
+		aux[r - l] = '\0'
+		self.free()
+		self.data = aux
+		self.len = r - l
+		self.capacity = self.len
+		return
 	}
 
 	fn to_int(self: String) -> i8 {
@@ -75,7 +109,7 @@ impl String {
 		return result
 	}
 
-	fn free(self: String) {
+	fn free(self: &String) {
 		free(self.data)
 		return
 	}
