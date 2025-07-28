@@ -1,0 +1,9 @@
+impl bool {
+	fn fmt(self: bool) -> string {
+		if self {
+			return "true"
+		}else{
+			return "false"
+		}
+	}
+}

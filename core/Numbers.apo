@@ -1,0 +1,9 @@
+impl i8 {
+	fn max(self: i8, other: i8) -> i8 {
+		if self < other {
+			return other
+		}else{
+			return self
+		}
+	}
+}

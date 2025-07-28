@@ -47,31 +47,32 @@ impl String {
 				return i
 			}
 		}
-		printf("Target %c not found\n", target)
 		return -1
 	}
 
 	fn split(self: &String, target: char) -> SplitResult {
-		let count : ui8 = self.count(target)
+		let count : ui8 = self.count(target) + 1
 		let rtn : &String = malloc(size_of(String) * count)
 		let offset : ui8 = 0
 		for i in (0..count) {
 			let aux = self.range(offset, self.len)
 			let end = aux.find(target)
-			if end != (-1) {
-				rtn[i] = aux.range(0, end)
-				offset += end + 1
+			if end == (-1) {
+				end = aux.len
 			}
-			aux.free()
+			rtn[i] = aux.range(0, end)
+			offset += end + 1
 		}
 		return new SplitResult { slice: rtn count: count }
 	}
 
 	fn is_empty(self: &String) -> bool {
-		let clone = self.clone()
-		clone.trim()
-		printf("Len %d\n", clone.len)
-		return (clone.len == 0)
+		for i in (0..self.len) {
+			if !self.data[i].is_whitespace() {
+				return false
+			}
+		}
+		return true
 	}
 
 	fn clone(self: &String) -> String {
@@ -93,9 +94,9 @@ impl String {
 		let alloc: &char = malloc(r - l + 1)
 		let aux : &char = self.data[l]
 		memcpy(alloc, aux, r - l)
-		aux[r - l] = '\0'
-		self.free()
-		self.data = aux
+		realloc(self.data, r - l + 1)
+		memcpy(self.data, alloc, r - l)
+		self.data[r - l] = '\0'
 		self.len = r - l
 		self.capacity = self.len
 		return
@@ -110,7 +111,9 @@ impl String {
 	}
 
 	fn free(self: &String) {
-		free(self.data)
+		if self.len > 0 {
+			free(self.data)
+		}
 		return
 	}
 
