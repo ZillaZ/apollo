@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 pest = "2.7.10"
 pest_derive = "2.7.10"
-gccjit = "2.7.0"
+gccjit = { version = "2.7.0", features = ["master"] }
 rust-analyzer = "0.0.1"
 
 [dependencies.uuid]

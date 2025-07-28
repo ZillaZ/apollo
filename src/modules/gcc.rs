@@ -34,7 +34,7 @@ impl<'a> GccValues<'a> {
         match self {
             GccValues::L(lvalue) => lvalue.get_alignment(),
             GccValues::R(rvalue) => rvalue.dereference(None).get_alignment(),
-            _ => 0
+            _ => 0,
         }
     }
     pub fn get_type(&self) -> Type<'a> {
@@ -42,7 +42,7 @@ impl<'a> GccValues<'a> {
             GccValues::L(lvalue) => lvalue.to_rvalue().get_type(),
             GccValues::R(rvalue) => rvalue.get_type(),
             GccValues::Type(dt) => *dt,
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
     pub fn rvalue(&self) -> RValue<'a> {
@@ -545,10 +545,7 @@ impl<'a> GccContext<'a> {
                 params.insert(ast_param.name.name.clone(), param.to_lvalue());
             }
             let mut block = function.new_block(format!("{}_start", method.name));
-            memory
-                .variables
-                .entry(fn_name.clone())
-                .or_insert(params);
+            memory.variables.entry(fn_name.clone()).or_insert(params);
             let copy = memory.function_scope.clone();
             memory.function_scope = fn_name.clone();
             self.parse_block(&mut method.body, &mut block, memory, ast);
@@ -824,11 +821,11 @@ impl<'a> GccContext<'a> {
     }
 
     fn compile_program(&'a self, is_debug: bool, out: String) {
-        self.context.add_driver_option("-march=x86-64-v4");
         self.context.dump_to_file(format!("{out}.c"), false);
         if is_debug {
-            self.context.set_optimization_level(gccjit::OptimizationLevel::None);
-        }else{
+            self.context
+                .set_optimization_level(gccjit::OptimizationLevel::None);
+        } else {
             self.context
                 .set_optimization_level(gccjit::OptimizationLevel::Aggressive);
         }
@@ -858,7 +855,7 @@ impl<'a> GccContext<'a> {
             let parameters = self.parse_args(&mut method.params, memory);
             let fn_name = if method.name.contains(":") {
                 method.name.clone()
-            }else{
+            } else {
                 format!("{dt_name}:{}", method.name)
             };
             let function = self.context.new_function(
@@ -878,7 +875,19 @@ impl<'a> GccContext<'a> {
     }
 
     pub fn build_context(&'a self, _block: &mut Block<'a>, ast: &mut Ast, memory: &mut Memory<'a>) {
-        println!("STARTED BUILDING CONTEXT {} {:?}", ast.context.impls.get("char").unwrap().len(), ast.context.impls.get("char").unwrap().iter().map(|x| &x.methods).flatten().map(|x| &x.name).collect::<Vec<_>>());
+        println!(
+            "STARTED BUILDING CONTEXT {} {:?}",
+            ast.context.impls.get("char").unwrap().len(),
+            ast.context
+                .impls
+                .get("char")
+                .unwrap()
+                .iter()
+                .map(|x| &x.methods)
+                .flatten()
+                .map(|x| &x.name)
+                .collect::<Vec<_>>()
+        );
         for (_name, dt) in ast.context.structs.clone().iter_mut() {
             println!("BUILDING STRUCT {_name}");
             self.parse_struct(dt, memory);
@@ -892,7 +901,9 @@ impl<'a> GccContext<'a> {
         for (_name, implementations) in ast.context.impls.clone().iter_mut() {
             println!("IMPL FOR {_name}");
             for implementation in implementations.iter_mut() {
-                if parsed.contains(&implementation.trait_name) { continue };
+                if parsed.contains(&implementation.trait_name) {
+                    continue;
+                };
                 parsed.insert(implementation.trait_name.clone());
                 self.impl_signature(implementation, memory);
             }
@@ -905,7 +916,9 @@ impl<'a> GccContext<'a> {
         for (_name, implementations) in ast.context.impls.clone().iter_mut() {
             println!("IMPL FOR {_name}");
             for implementation in implementations.iter_mut() {
-                if parsed.contains(&implementation.trait_name) { continue };
+                if parsed.contains(&implementation.trait_name) {
+                    continue;
+                };
                 parsed.insert(implementation.trait_name.clone());
                 self.parse_impl(implementation, _block, ast, memory);
             }
@@ -925,17 +938,6 @@ impl<'a> GccContext<'a> {
         gen_types: bool,
         out: String,
     ) {
-        /*
-        println!(
-            "Functions: {:?}",
-            ast.context
-                .functions
-                .iter()
-                .map(|(k, _)| k)
-                .collect::<Vec<_>>()
-        );
-         *
-         */
         let mut block = self.setup_entry_point(imports, ast, memory, gen_types);
         self.build_context(&mut block, ast, memory);
         self.parse_expression(ast, memory, &mut block);
@@ -962,15 +964,6 @@ impl<'a> GccContext<'a> {
         let mut fields = Vec::new();
         let mut counter = 0;
         let mut new_struct = HashMap::new();
-        /*
-        println!(
-            "Struct {} has {} fields",
-            r#struct.name,
-            r#struct.fields.len()
-        );
-         *
-         */
-
         for field in r#struct.fields.iter_mut() {
             new_struct.insert(field.name.clone(), counter);
             counter += 1;
@@ -2014,21 +2007,18 @@ impl<'a> GccContext<'a> {
         params
     }
 
-    fn size_of(&'a self, value: &GccValues<'a>, memory: &mut Memory<'a>) -> i32 {
-        let dt = value.get_type();
-        let alignment = value.get_alignment();
-        let size = if let Some(struct_type) = dt.is_struct() {
-            let mut total_size = 0;
-            for i in 0..struct_type.get_field_count() {
-                let field = struct_type.get_field(i as i32);
-                let dt = memory.field_types.get(&field).unwrap();
-                total_size += self.size_of(&GccValues::Type(*dt), memory);
-            }
-            total_size + alignment
-        } else {
-            dt.get_size() as i32
-        };
-        size + alignment
+    fn size_of(&'a self, block: Block<'a>, value: &GccValues<'a>, memory: &mut Memory<'a>) -> RValue<'a> {
+        let function = block.get_function();
+        let arr = self.context.new_array_type(None, value.get_type(), 2);
+        let aux = self.context.new_array_constructor(None, arr, &[value.rvalue(), value.rvalue()]);
+        let bind = function.new_local(None, arr, self.uuid());
+        block.add_assignment(None, bind, aux);
+        let dt = memory.datatypes.get("i8").unwrap();
+        let one = self.context.new_array_access(None, bind, self.context.new_rvalue_from_int(*dt, 0)).get_address(None);
+        let two = self.context.new_array_access(None, bind, self.context.new_rvalue_from_int(*dt, 1)).get_address(None);
+        let one = self.context.new_bitcast(None, one, *dt);
+        let two = self.context.new_bitcast(None, two, *dt);
+        self.context.new_binary_op(None, BinaryOp::Minus, *dt, two, one)
     }
 
     fn build_impl_params(
@@ -2260,14 +2250,12 @@ impl<'a> GccContext<'a> {
             return GccValues::R(rvalue);
         }
         if call.name.name == "size_of" {
-            return GccValues::R(self.context.new_rvalue_from_int(
-                *memory.datatypes.get("i4").unwrap(),
-                self.size_of(&args[0], memory),
-            ));
+            return GccValues::R(self.size_of(*block, &args[0], memory));
         }
         if let Some(field) = field {
             return self.parse_impl_call(args, call, field, block, memory, ast);
         }
+
         let mut fn_name = call.name.name.clone();
 
         let mut to_impl = if let Some(to_impl) = memory.functions_with_traits.get(&fn_name) {
@@ -2371,6 +2359,7 @@ impl<'a> GccContext<'a> {
             return rtn;
         }
         let left_is_ptr = self.is_pointer(&left_type, memory);
+        let left_is_numeric = left_type.is_integral();
         let right_is_ptr = self.is_pointer(&rtn.get_type(), memory);
         if (left_type.is_compatible_with(*memory.datatypes.get("Any").unwrap()) || left_is_ptr)
             && !right_is_ptr
@@ -2378,11 +2367,10 @@ impl<'a> GccContext<'a> {
             rtn = self
                 .context
                 .new_cast(None, right.get_reference(), left_type);
-        } else if !left_is_ptr && right_is_ptr
-        {
-            rtn = self
-                .context
-                .new_cast(None, right.dereference(), left_type);
+        } else if !left_is_ptr && !left_is_numeric && right_is_ptr {
+            rtn = self.context.new_cast(None, right.dereference(), left_type);
+        } else if left_is_numeric && right_is_ptr {
+            rtn = self.context.new_bitcast(None, rtn, left_type);
         } else {
             rtn = self.context.new_cast(None, rtn, left_type);
         }

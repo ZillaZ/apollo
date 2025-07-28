@@ -40,7 +40,7 @@ pub struct Memory<'a> {
 impl<'a> Memory<'a> {
     pub fn new(name: String) -> Self {
         let builtins = vec![
-            "printf", "strnlen", "malloc", "memcpy", "realloc", "free", "alloca",
+            "exit", "printf", "strnlen", "malloc", "memcpy", "realloc", "free", "alloca",
         ]
         .iter()
         .map(|x| x.to_string())

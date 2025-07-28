@@ -27,7 +27,7 @@ impl String {
 		let rtn : &char = malloc(1 + end - start)
 		let offset : &char = self.data[start]
 		memcpy(rtn, offset, end - start)
-		rtn[end] = '\0'
+		rtn[end - start] = '\0'
 		return new String { data: rtn len: end - start capacity: end - start }
 	}
 
@@ -52,7 +52,8 @@ impl String {
 
 	fn split(self: &String, target: char) -> SplitResult {
 		let count : ui8 = self.count(target) + 1
-		let rtn : &String = malloc(size_of(String) * count)
+		printf("Size %d\n", size_of(^self))
+		let rtn : &String = malloc(size_of(^self) * count)
 		let offset : ui8 = 0
 		for i in (0..count) {
 			let aux = self.range(offset, self.len)
@@ -94,7 +95,7 @@ impl String {
 		let alloc: &char = malloc(r - l + 1)
 		let aux : &char = self.data[l]
 		memcpy(alloc, aux, r - l)
-		realloc(self.data, r - l + 1)
+		self.data = realloc(self.data, r - l + 1)
 		memcpy(self.data, alloc, r - l)
 		self.data[r - l] = '\0'
 		self.len = r - l

@@ -29,6 +29,7 @@ enum HttpMethod {
 impl HttpMethod {
     fn parse(data: String) -> HttpMethod {
         let space : i8 = data.find(' ')
+        if space < 0 { exit(1) }
         let method_str = data.range(0, space)
         if "GET" == method_str.data {
             return HttpMethod.Get
@@ -83,13 +84,15 @@ struct Headers {
 impl Headers {
     fn new() -> Headers {
         let capacity = 8
-        return new Headers { headers: malloc(size_of(Header) * capacity) size: 0 capacity: capacity}
+        let aux : Header
+        return new Headers { headers: malloc(size_of(aux) * capacity) size: 0 capacity: capacity}
     }
 
     fn push(self: &Headers, header: Header) {
         if self.size == (self.capacity - 1) {
             self.capacity *= 2
-            self.headers = realloc(self.headers, size_of(Header) * self.capacity)
+            printf("Header size: %d\n", size_of(header))
+            self.headers = realloc(self.headers, size_of(header) * self.capacity)
         }
         self.headers[self.size] = header
         self.size += 1
@@ -110,14 +113,18 @@ impl Headers {
                 offset += line_end + 1
             }
             let line = copy.range(0, line_end)
+            printf("HL: %s\n", line.data)
             if (!flag) && line.is_empty() {
                 flag = true
             }else{
                 let kind_end : i8 = line.find(':')
+                if kind_end < 0 { exit(2) }
                 let kind = line.range(0, kind_end)
                 let value = line.range(kind_end+1, line.len)
+                let a = malloc(10)
                 let header = Header.from_string(kind, value)
                 headers.push(header)
+                printf("%s | %s\n", kind.data, value.data)
             }
         }
         return headers
@@ -155,10 +162,13 @@ struct Request {
 impl Request {
     fn parse(data: String) -> Request {
         let new_line = data.find('\n')
+        if new_line < 0 { exit(90) }
         let method = HttpMethod.parse(data)
         let path_start : i8 = data.find(' ')
+        if path_start < 0 { exit(100) }
         let sub = data.range(path_start, new_line)
         let path_end = sub.find(' ') + path_start
+        if path_end < 0 { exit(99) }
         let path = data.range(path_start, path_end)
         let first_line = data.range(0, new_line)
         let headers_str = data.range(new_line + 1, data.len)
