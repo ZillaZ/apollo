@@ -14,7 +14,7 @@ use super::memory::Memory;
 use super::parser::{Ast, BuildCache};
 use super::structs::{
     self, Arg, AssignVar, Condition, Constructor, DataType, Enum, EnumValue, FieldAccessName,
-    ForLoop, Impl, ImplMethod, MacroKind, Name, Overloaded, OverloadedOp, ParameterType,
+    ForLoop, Impl, ImplMethod, MacroKind, Name, Overloaded, OverloadedOp,
     RangeValue, RefOp, StructDecl, Value, ValueEnum,
 };
 use super::structs::{Expr, FunctionKind, LibLink, WhileLoop};
@@ -1618,64 +1618,12 @@ impl<'a> GccContext<'a> {
         params
     }
 
-    fn function_name(&'a self, traits: &Vec<&structs::Arg>, name: &String) -> String {
-        if traits.is_empty() {
-            name.clone()
-        } else {
-            let traits = traits
-                .iter()
-                .filter(|x| {
-                    if let ParameterType::Implements(_) = x.datatype {
-                        true
-                    } else {
-                        false
-                    }
-                })
-                .map(|x| {
-                    let ParameterType::Implements(ref t) = x.datatype else {
-                        panic!();
-                    };
-                    (x.name.name.clone(), t)
-                });
-            let traits = traits.map(|(name, implements)| {
-                format!(
-                    "{name}{}",
-                    implements
-                        .iter()
-                        .fold(String::new(), |acc, elem| format!("{acc}{elem}"))
-                )
-            });
-            format!(
-                "{}{}",
-                name,
-                traits.fold(String::new(), |acc, elem| format!("{acc}{elem}"))
-            )
-        }
-    }
-
     fn parse_function_signature(
         &'a self,
         function: &mut structs::Function,
         memory: &mut Memory<'a>,
         ast: &mut Ast,
     ) -> Option<gccjit::Function<'a>> {
-        let traits: Vec<&structs::Arg> = function
-            .args
-            .iter()
-            .filter(|x| {
-                if let ParameterType::Implements(_) = x.datatype {
-                    true
-                } else {
-                    false
-                }
-            })
-            .collect();
-        if !traits.is_empty() {
-            memory
-                .functions_with_traits
-                .insert(function.name.name.clone(), function.clone());
-            return None;
-        }
         let mut expandable = false;
         for apollo_macro in memory.macros.iter() {
             for kind in apollo_macro.macros.iter() {
@@ -1760,17 +1708,8 @@ impl<'a> GccContext<'a> {
         memory: &mut Memory<'a>,
     ) -> Vec<Parameter<'a>> {
         let mut params = Vec::new();
-        for arg in args.iter_mut().filter(|x| {
-            if let ParameterType::Type(_) = x.datatype {
-                true
-            } else {
-                false
-            }
-        }) {
-            let ParameterType::Type(ref mut dt) = arg.datatype else {
-                panic!()
-            };
-            let datatype = self.parse_datatype(dt, memory);
+        for arg in args.iter_mut() {
+            let datatype = self.parse_datatype(&mut arg.datatype, memory);
             let param = self.context.new_parameter(None, datatype, &arg.name.name);
             params.push(param);
         }
@@ -2034,29 +1973,6 @@ impl<'a> GccContext<'a> {
             let param = &mut params[i];
             let arg = &mut args[i];
 
-            match param.datatype {
-                ParameterType::Type(ref mut dt) => {
-                    let dt = self.parse_datatype(dt, memory);
-                    if !dt.is_compatible_with(arg.rvalue().get_type()) {
-                        panic!(
-                            "Incompatible types when calling {} on argument {:?}",
-                            &name, arg
-                        );
-                    }
-                }
-                ParameterType::Implements(ref traits) => {
-                    let impls = memory.impls.get(&arg.rvalue().get_type()).unwrap();
-                    for t in traits {
-                        if !impls.contains_key(t) {
-                            panic!(
-                                "Type {:?} does not implement trait {}",
-                                arg.rvalue().get_type(),
-                                t
-                            );
-                        }
-                    }
-                }
-            }
             rtn.push(
                 self.context
                     .new_parameter(None, arg.rvalue().get_type(), &param.name.name),
@@ -2100,12 +2016,6 @@ impl<'a> GccContext<'a> {
             .find(|x| *x.1 == dt)
             .expect(&format!("Datatype {:?} does not exists", dt));
         let mut fn_name = format!("{dt_name}:{}", call.name.name.clone());
-        let to_impl = if let Some(to_impl) = memory.impl_with_traits.get(&call.name.name) {
-            fn_name = self.function_name(&to_impl.1.params.iter().collect(), &call.name.name);
-            Some(to_impl.clone())
-        } else {
-            None
-        };
         /*
         println!(
             "Impls for {:?}: {:?}",
@@ -2114,50 +2024,7 @@ impl<'a> GccContext<'a> {
         );
          *
          */
-        let method = if let Some(impl_map) = memory.impl_methods.clone().get(&fn_name) {
-            let method = impl_map.get(&dt);
-            if method.is_none() {
-                let (_, mut to_impl) = to_impl.expect(&format!(
-                    "No impl {} for {:?} on module {}",
-                    fn_name, dt, memory.name
-                ));
-                if to_impl.params.len() != args.len() {
-                    panic!("Sizes do not match.")
-                }
-                let params = self.build_impl_params(
-                    args.clone(),
-                    to_impl.params.clone(),
-                    memory,
-                    call.name.name.clone(),
-                );
-                let datatype = if let Some(ref mut dt) = to_impl.datatype {
-                    self.parse_datatype(dt, memory)
-                } else {
-                    <() as Typeable>::get_type(self.context)
-                };
-                let function = self.context.new_function(
-                    None,
-                    gccjit::FunctionType::Internal,
-                    datatype,
-                    &params,
-                    &fn_name,
-                    false,
-                );
-                let entry = memory.impls.entry(dt).or_insert(HashMap::new());
-                let (_, map) = entry
-                    .iter_mut()
-                    .find(|(_, value)| value.contains_key(&call.name.name))
-                    .unwrap();
-                map.insert(fn_name.clone(), function);
-                let entry = memory
-                    .impl_methods
-                    .entry(fn_name.clone())
-                    .or_insert(HashMap::new());
-                entry.insert(field.rvalue().get_type(), function);
-            }
-            let method = impl_map.get(&dt).unwrap();
-            *method
-        } else {
+        let method = {
             let aux = memory.datatypes.clone();
             let (name, _) = aux.iter().find(|(_, v)| **v == dt).unwrap();
             let impls = ast
@@ -2256,18 +2123,8 @@ impl<'a> GccContext<'a> {
             return self.parse_impl_call(args, call, field, block, memory, ast);
         }
 
-        let mut fn_name = call.name.name.clone();
-
-        let mut to_impl = if let Some(to_impl) = memory.functions_with_traits.get(&fn_name) {
-            fn_name = self.function_name(&to_impl.args.iter().collect(), &call.name.name);
-            Some(to_impl.clone())
-        } else {
-            None
-        };
-        if let Some(ref to_impl) = to_impl {
-            fn_name = self.function_name(&to_impl.args.iter().collect(), &call.name.name);
-        }
-        if !memory.functions.contains_key(&fn_name) && to_impl.is_none() {
+        let fn_name = call.name.name.clone();
+        if !memory.functions.contains_key(&fn_name) {
             let mut functions = ast.context.functions.clone();
             let mut function = functions.get_mut(&fn_name);
             if let Some(ref mut function) = function {
@@ -2276,47 +2133,6 @@ impl<'a> GccContext<'a> {
                     .unwrap();
                 memory.functions.insert(fn_name.clone(), function);
             }
-        } else if let Some(ref mut to_impl) = to_impl {
-            let params = self.build_impl_params(
-                args.clone(),
-                to_impl.args.clone(),
-                memory,
-                call.name.name.clone(),
-            );
-            let mut vars = HashMap::new();
-            for i in 0..to_impl.args.len() {
-                vars.insert(to_impl.args[i].name.name.clone(), params[i]);
-            }
-            let datatype = if let Some(ref mut dt) = to_impl.return_type {
-                self.parse_datatype(dt, memory)
-            } else {
-                <() as Typeable>::get_type(self.context)
-            };
-            let function = self.context.new_function(
-                None,
-                gccjit::FunctionType::Internal,
-                datatype,
-                &params,
-                fn_name.clone(),
-                false,
-            );
-            let entry = memory.variables.entry(fn_name.clone()).or_insert(
-                vars.iter()
-                    .map(|x| (x.0.clone(), x.1.to_lvalue()))
-                    .collect(),
-            );
-            let last_param = function.get_param(function.get_param_count() as i32);
-            entry.insert("#offset".into(), last_param.to_lvalue());
-            memory
-                .variadic_args
-                .insert(function, params[to_impl.args.len()..].to_vec());
-            let mut new_block = function.new_block(self.uuid());
-            let mut rc = self.get_rc_value(&mut to_impl.block).unwrap();
-            let copy = memory.function_scope.clone();
-            memory.function_scope = fn_name.clone();
-            self.parse_block(&mut rc, &mut new_block, memory, ast);
-            memory.function_scope = copy;
-            memory.functions.insert(fn_name.clone(), function);
         }
         let function = memory
             .functions

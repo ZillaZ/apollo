@@ -1,0 +1,13 @@
+enum Option {
+	Some(impls<Display>)
+	None
+}
+
+impl Option {
+	fn unwrap(self: Option<impls <Display>>) -> impls<Display> {
+		match self {
+			Option.Some(val) => return val,
+			_ => panic("Unwrap on Option.None:", self)
+		}
+	}
+}

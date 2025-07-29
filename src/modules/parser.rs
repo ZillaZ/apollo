@@ -10,28 +10,17 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
+#[derive(Default)]
 pub struct BuildCache {
-    pub fn_deps: HashMap<String, (Vec<Expr>, Vec<Expr>)>,
-    pub dt_deps: HashMap<String, (Vec<Expr>, Vec<Expr>)>,
+    pub fn_deps: HashMap<String, (Vec<Expr>, Vec<Impl>)>,
+    pub dt_deps: HashMap<String, (Vec<Expr>, Vec<Impl>)>,
     pub call_stack: HashSet<String>,
     pub structs: HashMap<String, StructDecl>,
     pub enums: HashMap<String, Enum>,
     pub impls: HashMap<String, Vec<Impl>>,
     pub functions: HashMap<String, Function>,
-}
-
-impl BuildCache {
-    pub fn new() -> Self {
-        Self {
-            fn_deps: HashMap::new(),
-            dt_deps: HashMap::new(),
-            call_stack: HashSet::new(),
-            structs: HashMap::new(),
-            enums: HashMap::new(),
-            impls: HashMap::new(),
-            functions: HashMap::new(),
-        }
-    }
+    pub traits: HashMap<String, Trait>,
+    pub generic_types: HashMap<String, GenericType>
 }
 
 #[derive(Clone, Debug)]
@@ -56,59 +45,39 @@ impl Ast {
             ast.build_imports(cache);
             for import in parse_import_path(import) {
                 let import = import.split("/").last().unwrap();
-                println!("Building import {}", import);
                 if let Some(function) = ast.context.functions.clone().get(import) {
-                    let (mut rec_imports, impls) = ast.get_fn_dependencies(function, cache);
+                    let (rec_imports, impls) = ast.get_fn_dependencies(function, cache);
                     for expr in rec_imports.iter() {
                         match expr {
                             Expr::StructDecl(ref decl) => {
-                                let impls = impls
-                                    .iter()
+                                let impls = impls.clone()
+                                    .into_iter()
                                     .filter(|x| {
-                                        if let Expr::Impl(i) = x {
-                                            let name = if let Some(ref name) = i.target_name {
-                                                name.clone()
-                                            } else {
-                                                i.trait_name.clone()
-                                            };
-                                            name == decl.name
+                                        let name = if let Some(ref name) = x.target_name {
+                                            name.clone()
                                         } else {
-                                            false
-                                        }
-                                    })
-                                    .map(|x| {
-                                        if let Expr::Impl(i) = x {
-                                            i.clone()
-                                        } else {
-                                            unreachable!()
-                                        }
+                                            x.trait_name.clone()
+                                        };
+                                        name == decl.name
+
                                     })
                                     .collect::<Vec<Impl>>();
-                                self.context.structs.insert(decl.name.clone(), decl.clone());
-                                cache.structs.insert(decl.name.clone(), decl.clone());
-                                cache.impls.insert(decl.name.clone(), impls);
+                                let name = format!("{}::{}", ast.namespace, decl.name);
+                                self.context.structs.insert(name.clone(), decl.clone());
+                                cache.structs.insert(name.clone(), decl.clone());
+                                cache.impls.insert(name, impls);
                             }
                             Expr::Enum(ref dt) => {
-                                let impls = impls
-                                    .iter()
+                                let impls = impls.clone()
+                                    .into_iter()
                                     .filter(|x| {
-                                        if let Expr::Impl(i) = x {
-                                            let name = if let Some(ref name) = i.target_name {
-                                                name.clone()
-                                            } else {
-                                                i.trait_name.clone()
-                                            };
-                                            name == dt.name
+                                        let name = if let Some(ref name) = x.target_name {
+                                            name.clone()
                                         } else {
-                                            false
-                                        }
-                                    })
-                                    .map(|x| {
-                                        if let Expr::Impl(i) = x {
-                                            i.clone()
-                                        } else {
-                                            unreachable!()
-                                        }
+                                            x.trait_name.clone()
+                                        };
+                                        name == dt.name
+
                                     })
                                     .collect::<Vec<Impl>>();
                                 self.context.enums.insert(dt.name.clone(), dt.clone());
@@ -133,33 +102,20 @@ impl Ast {
                         .functions
                         .insert(function.name.name.clone(), function.clone());
 
-                    let mut name = None;
-                    for implementation in impls.iter() {
-                        if let Expr::Impl(ref implementation) = implementation {
-                            name = Some(if let Some(ref name) = implementation.target_name {
-                                name.clone()
-                            } else {
-                                implementation.trait_name.clone()
-                            });
-                            break;
-                        }
-                    }
+                    let name = if let Some(implementation) = impls.get(0) {
+                        Some(if let Some(ref name) = implementation.target_name {
+                            name.clone()
+                        } else {
+                            implementation.trait_name.clone()
+                        })
+                    }else{
+                        None
+                    };
                     if let Some(name) = name {
-                        let collected_impls: Vec<Impl> = impls
-                            .clone()
-                            .into_iter()
-                            .map(|x| {
-                                if let Expr::Impl(i) = x {
-                                    i
-                                } else {
-                                    unreachable!()
-                                }
-                            })
-                            .collect();
                         self.context
                             .impls
-                            .insert(name.clone(), collected_impls.clone());
-                        cache.impls.insert(name.clone(), collected_impls);
+                            .insert(name.clone(), impls.clone());
+                        cache.impls.insert(name.clone(), impls);
                     }
                 } else if let Some(dt) = ast.context.structs.clone().get(import) {
                     let (mut rec_imports, mut impls) = (Vec::new(), Vec::new());
@@ -172,26 +128,16 @@ impl Ast {
                     for expr in rec_imports.iter() {
                         match expr {
                             Expr::StructDecl(ref decl) => {
-                                let impls = impls
-                                    .iter()
+                                let impls = impls.clone()
+                                    .into_iter()
                                     .filter(|x| {
-                                        if let Expr::Impl(i) = x {
-                                            let name = if let Some(ref name) = i.target_name {
-                                                name.clone()
-                                            } else {
-                                                i.trait_name.clone()
-                                            };
-                                            name == decl.name
+                                        let name = if let Some(ref name) = x.target_name {
+                                            name.clone()
                                         } else {
-                                            false
-                                        }
-                                    })
-                                    .map(|x| {
-                                        if let Expr::Impl(i) = x {
-                                            i.clone()
-                                        } else {
-                                            unreachable!()
-                                        }
+                                            x.trait_name.clone()
+                                        };
+                                        name == decl.name
+
                                     })
                                     .collect::<Vec<Impl>>();
 
@@ -200,26 +146,16 @@ impl Ast {
                                 cache.impls.insert(decl.name.clone(), impls);
                             }
                             Expr::Enum(ref dt) => {
-                                let impls = impls
-                                    .iter()
+                                let impls = impls.clone()
+                                    .into_iter()
                                     .filter(|x| {
-                                        if let Expr::Impl(i) = x {
-                                            let name = if let Some(ref name) = i.target_name {
-                                                name.clone()
-                                            } else {
-                                                i.trait_name.clone()
-                                            };
-                                            name == dt.name
+                                        let name = if let Some(ref name) = x.target_name {
+                                            name.clone()
                                         } else {
-                                            false
-                                        }
-                                    })
-                                    .map(|x| {
-                                        if let Expr::Impl(i) = x {
-                                            i.clone()
-                                        } else {
-                                            unreachable!()
-                                        }
+                                            x.trait_name.clone()
+                                        };
+                                        name == dt.name
+
                                     })
                                     .collect::<Vec<Impl>>();
 
@@ -241,22 +177,10 @@ impl Ast {
                     self.context.structs.insert(dt.name.clone(), dt.clone());
                     cache.structs.insert(dt.name.clone(), dt.clone());
 
-                    let collected_impls: Vec<Impl> = impls
-                        .clone()
-                        .into_iter()
-                        .map(|x| {
-                            if let Expr::Impl(i) = x {
-                                i
-                            } else {
-                                unreachable!()
-                            }
-                        })
-                        .collect();
-
                     self.context
                         .impls
-                        .insert(dt.name.clone(), collected_impls.clone());
-                    cache.impls.insert(dt.name.clone(), collected_impls);
+                        .insert(dt.name.clone(), impls.clone());
+                    cache.impls.insert(dt.name.clone(), impls);
                 } else if let Some(dt) = ast.context.enums.clone().get(import) {
                     let (mut rec_imports, mut impls) = (Vec::new(), Vec::new());
                     ast.get_st_deps(
@@ -268,26 +192,16 @@ impl Ast {
                     for expr in rec_imports.iter() {
                         match expr {
                             Expr::StructDecl(ref decl) => {
-                                let impls = impls
-                                    .iter()
+                                let impls = impls.clone()
+                                    .into_iter()
                                     .filter(|x| {
-                                        if let Expr::Impl(i) = x {
-                                            let name = if let Some(ref name) = i.target_name {
-                                                name.clone()
-                                            } else {
-                                                i.trait_name.clone()
-                                            };
-                                            name == decl.name
+                                        let name = if let Some(ref name) = x.target_name {
+                                            name.clone()
                                         } else {
-                                            false
-                                        }
-                                    })
-                                    .map(|x| {
-                                        if let Expr::Impl(i) = x {
-                                            i.clone()
-                                        } else {
-                                            unreachable!()
-                                        }
+                                            x.trait_name.clone()
+                                        };
+                                        name == decl.name
+
                                     })
                                     .collect::<Vec<Impl>>();
 
@@ -296,26 +210,16 @@ impl Ast {
                                 cache.impls.insert(decl.name.clone(), impls);
                             }
                             Expr::Enum(ref dt) => {
-                                let impls = impls
-                                    .iter()
+                                let impls = impls.clone()
+                                    .into_iter()
                                     .filter(|x| {
-                                        if let Expr::Impl(i) = x {
-                                            let name = if let Some(ref name) = i.target_name {
-                                                name.clone()
-                                            } else {
-                                                i.trait_name.clone()
-                                            };
-                                            name == dt.name
+                                        let name = if let Some(ref name) = x.target_name {
+                                            name.clone()
                                         } else {
-                                            false
-                                        }
-                                    })
-                                    .map(|x| {
-                                        if let Expr::Impl(i) = x {
-                                            i.clone()
-                                        } else {
-                                            unreachable!()
-                                        }
+                                            x.trait_name.clone()
+                                        };
+                                        name == dt.name
+
                                     })
                                     .collect::<Vec<Impl>>();
 
@@ -337,22 +241,80 @@ impl Ast {
                     self.context.enums.insert(dt.name.clone(), dt.clone());
                     cache.enums.insert(dt.name.clone(), dt.clone());
 
-                    let collected_impls: Vec<Impl> = impls
-                        .clone()
-                        .into_iter()
-                        .map(|x| {
-                            if let Expr::Impl(i) = x {
-                                i
-                            } else {
-                                unreachable!()
-                            }
-                        })
-                        .collect();
-
                     self.context
                         .impls
-                        .insert(dt.name.clone(), collected_impls.clone());
-                    cache.impls.insert(dt.name.clone(), collected_impls);
+                        .insert(dt.name.clone(), impls.clone());
+                    cache.impls.insert(dt.name.clone(), impls);
+                }else if let Some(t) = ast.context.traits.clone().get(import) {
+                    let (mut rec_imports, mut impls) = (Vec::new(), Vec::new());
+                    ast.get_trait_deps(t, &mut rec_imports, &mut impls, cache);
+                    for expr in rec_imports.iter() {
+                        match expr {
+                            Expr::StructDecl(ref decl) => {
+                                let impls = impls.clone()
+                                                 .into_iter()
+                                                 .filter(|x| {
+                                                     let name = if let Some(ref name) = x.target_name {
+                                                         name.clone()
+                                                     } else {
+                                                         x.trait_name.clone()
+                                                     };
+                                                     name == decl.name
+
+                                                 })
+                                                 .collect::<Vec<Impl>>();
+
+                                self.context.structs.insert(decl.name.clone(), decl.clone());
+                                cache.structs.insert(decl.name.clone(), decl.clone());
+                                cache.impls.insert(decl.name.clone(), impls);
+                            }
+                            Expr::Enum(ref dt) => {
+                                let impls = impls.clone()
+                                                 .into_iter()
+                                                 .filter(|x| {
+                                                     let name = if let Some(ref name) = x.target_name {
+                                                         name.clone()
+                                                     } else {
+                                                         x.trait_name.clone()
+                                                     };
+                                                     name == dt.name
+
+                                                 })
+                                                 .collect::<Vec<Impl>>();
+
+                                self.context.enums.insert(dt.name.clone(), dt.clone());
+                                cache.enums.insert(dt.name.clone(), dt.clone());
+                                cache.impls.insert(dt.name.clone(), impls);
+                            }
+                            Expr::Function(ref function) => {
+                                self.context
+                                    .functions
+                                    .insert(function.name.name.clone(), function.clone());
+                                cache
+                                    .functions
+                                    .insert(function.name.name.clone(), function.clone());
+                            }
+                            _ => continue,
+                        };
+                    }
+                    self.context.traits.insert(t.name.clone(), t.clone());
+                    cache.traits.insert(t.name.clone(), t.clone());
+
+                    let name = if let Some(implementation) = impls.get(0) {
+                        Some(if let Some(ref name) = implementation.target_name {
+                            name.clone()
+                        } else {
+                            implementation.trait_name.clone()
+                        })
+                    }else{
+                        None
+                    };
+                    if let Some(name) = name {
+                        self.context
+                            .impls
+                            .insert(name.clone(), impls.clone());
+                        cache.impls.insert(name.clone(), impls);
+                    }
                 }
             }
         }
@@ -362,7 +324,7 @@ impl Ast {
         &mut self,
         dt: &Enum,
         cache: &mut BuildCache,
-    ) -> (Vec<Expr>, Vec<Expr>) {
+    ) -> (Vec<Expr>, Vec<Impl>) {
         let mut rtn = Vec::new();
         let mut impls = Vec::new();
         for variant in dt.variants.iter() {
@@ -391,7 +353,7 @@ impl Ast {
     pub fn resolve_deps_impls(
         &mut self,
         name: &str,
-        impls: &mut Vec<Expr>,
+        impls: &mut Vec<Impl>,
         cache: &mut BuildCache,
     ) -> Vec<Expr> {
         let mut rtn = Vec::new();
@@ -407,19 +369,46 @@ impl Ast {
                     rtn.extend_from_slice(&e);
                 }
             }
-            impls.extend(aimpls.clone().into_iter().map(|x| Expr::Impl(x)));
+            impls.extend(aimpls.clone());
         }
         rtn
+    }
+
+    pub fn get_trait_deps(&mut self, t: &Trait, expr: &mut Vec<Expr>, impls: &mut Vec<Impl>, cache: &mut BuildCache) {
+        for method in t.methods.iter() {
+            if let Some(ref dt) = method.datatype {
+                self.get_st_deps(&dt.datatype, expr, impls, cache)
+            }
+            for param in method.params.iter() {
+                self.get_st_deps(&param.datatype.datatype, expr, impls, cache)
+            }
+        }
     }
 
     pub fn get_st_deps(
         &mut self,
         dt: &DataType,
         expr: &mut Vec<Expr>,
-        impls: &mut Vec<Expr>,
+        impls: &mut Vec<Impl>,
         cache: &mut BuildCache,
     ) {
         match dt {
+            DataType::Generic(ref rc) => {
+                let generic = rc.borrow();
+                if let Some((e, i)) = cache.dt_deps.get(&generic.base) {
+                    expr.extend_from_slice(e);
+                    impls.extend_from_slice(i);
+                    return;
+                }
+                self.get_st_deps(&generic.generic.datatype, expr, impls, cache);
+            }
+            DataType::Implements(ref traits) => {
+                for t in traits.iter() {
+                    let a = self.context.traits.clone();
+                    let t = a.get(t).unwrap();
+                    self.get_trait_deps(t, expr, impls, cache);
+                }
+            }
             DataType::StructType(ref name) => {
                 if let Some((e, i)) = cache.dt_deps.get(name) {
                     expr.extend_from_slice(e);
@@ -464,7 +453,7 @@ impl Ast {
         &mut self,
         dt: &StructDecl,
         cache: &mut BuildCache,
-    ) -> (Vec<Expr>, Vec<Expr>) {
+    ) -> (Vec<Expr>, Vec<Impl>) {
         let mut rtn = Vec::new();
         let mut impls = Vec::new();
 
@@ -497,7 +486,7 @@ impl Ast {
         &mut self,
         value: &mut ValueEnum,
         rtn: &mut Vec<Expr>,
-        impls: &mut Vec<Expr>,
+        impls: &mut Vec<Impl>,
         cache: &mut BuildCache,
     ) {
         match value {
@@ -558,7 +547,7 @@ impl Ast {
         &mut self,
         ast_if: &mut If,
         rtn: &mut Vec<Expr>,
-        impls: &mut Vec<Expr>,
+        impls: &mut Vec<Impl>,
         cache: &mut BuildCache,
     ) {
         if let Some(ref mut condition) = ast_if.condition {
@@ -581,7 +570,7 @@ impl Ast {
         &mut self,
         block: &Block,
         rtn: &mut Vec<Expr>,
-        impls: &mut Vec<Expr>,
+        impls: &mut Vec<Impl>,
         cache: &mut BuildCache,
     ) {
         if let Some(mut ret) = block.box_return.clone() {
@@ -659,7 +648,7 @@ impl Ast {
         &mut self,
         function: &Function,
         cache: &mut BuildCache,
-    ) -> (Vec<Expr>, Vec<Expr>) {
+    ) -> (Vec<Expr>, Vec<Impl>) {
         if let Some((e, i)) = cache.fn_deps.get(&function.name.name) {
             return (e.clone(), i.clone());
         }
@@ -670,9 +659,7 @@ impl Ast {
         }
         cache.call_stack.insert(function.name.name.clone());
         for param in function.args.iter() {
-            if let ParameterType::Type(ref dt) = param.datatype {
-                self.get_st_deps(&dt.datatype, &mut rtn, &mut impls, cache);
-            }
+            self.get_st_deps(&param.datatype.datatype, &mut rtn, &mut impls, cache);
         }
         if let Some(ref dt) = function.return_type {
             self.get_st_deps(&dt.datatype, &mut rtn, &mut impls, cache);
@@ -752,7 +739,7 @@ impl NoirParser {
 
     pub fn gen_ast(&self, pairs: &mut Pairs<Rule>, namespace: String) -> Ast {
         let namespace = namespace.split("::").last().unwrap().to_string();
-        let mut context = AstContext::new();
+        let mut context = AstContext::default();
         context.scope = "main".to_string();
         let expressions = self.build_expression(pairs, &mut context);
         let imports = expressions
@@ -770,7 +757,7 @@ impl NoirParser {
             expressions,
             context,
             imports,
-            core_context: AstContext::new(),
+            core_context: AstContext::default(),
         }
     }
 
@@ -874,12 +861,39 @@ impl NoirParser {
                     Expr::VariadicBlock(self.build_block(&mut pair.into_inner(), context))
                 }
                 Rule::r#macro => Expr::Macro(self.build_macro(&mut pair.into_inner(), context)),
+                Rule::r#match => Expr::Match(self.build_match(&mut pair.into_inner(), context)),
                 Rule::EOI => continue,
                 rule => unreachable!("{:?}", rule),
             };
             expressions.push(expr);
         }
         expressions
+    }
+
+    fn build_match(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Match {
+        let mut value = Value::default();
+        let mut cases = Vec::new();
+        for mut pair in pairs {
+            match pair.as_rule() {
+                Rule::bvalue | Rule::base_value | Rule::binary_operation | Rule::unary_operation => value = self.build_single_value(&mut pair, context),
+                Rule::match_block => cases.push(self.build_match_block(&mut pair.into_inner(), context)),
+                _ => unreachable!()
+            }
+        }
+        Match { value: value.value, cases }
+    }
+
+    fn build_match_block(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> MatchCase {
+        let first = &mut pairs.next().unwrap();
+        let value = match first.as_rule() {
+            Rule::default => MatchCaseValue::Default,
+            _ => MatchCaseValue::Value(self.build_single_value(first, context).value)
+        };
+        let expr = self.build_expression(pairs, context);
+        MatchCase {
+            value,
+            expr
+        }
     }
 
     fn build_macro(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Macro {
@@ -1181,7 +1195,7 @@ impl NoirParser {
         for pair in pairs {
             match pair.as_rule() {
                 Rule::name_str => name = pair.as_str().into(),
-                Rule::parameter => params.push(self.build_param(&mut pair.into_inner(), context)),
+                Rule::parameter => params = self.build_args(&mut pair.into_inner(), context),
                 Rule::datatype => {
                     datatype = Some(self.build_datatype(&mut pair.into_inner(), context))
                 }
@@ -1504,6 +1518,9 @@ impl NoirParser {
                     value.value = ValueEnum::Closure(Rc::new(RefCell::new(
                         self.build_closure(&mut eval.into_inner(), context),
                     )));
+                }
+                Rule::r#match => {
+                    value.value = ValueEnum::Match(Rc::new(RefCell::new(self.build_match(&mut eval.into_inner(), context))));
                 }
                 rule => unreachable!("Fucked up rule is {:?}", rule),
             };
@@ -2056,19 +2073,14 @@ impl NoirParser {
                 op: None,
                 op_count: 0,
             },
-            datatype: ParameterType::Type(Type::default()),
+            datatype: Type::default(),
         };
         for pair in pairs {
             match pair.as_rule() {
                 Rule::name => arg.name = self.build_name(&mut pair.into_inner(), context),
                 Rule::datatype => {
                     arg.datatype =
-                        ParameterType::Type(self.build_datatype(&mut pair.into_inner(), context))
-                }
-                Rule::implements_type => {
-                    arg.datatype = ParameterType::Implements(
-                        self.build_implements_type(&mut pair.into_inner(), context),
-                    )
+                        self.build_datatype(&mut pair.into_inner(), context)
                 }
                 _ => unreachable!(),
             }
@@ -2124,6 +2136,13 @@ impl NoirParser {
                     is_ref = true;
                     ref_count += 1;
                 }
+                Rule::implements => {
+                    let generics = pair.into_inner().map(|x| x.as_str().to_string()).collect();
+                    datatype = DataType::Implements(generics);
+                }
+                Rule::generic_type => {
+                    datatype = DataType::Generic(Rc::new(RefCell::new(self.build_generic_type(&mut pair.into_inner(), context))));
+                }
                 rule => unreachable!("Got rule {:?}", rule),
             };
         }
@@ -2132,6 +2151,21 @@ impl NoirParser {
             ref_count,
             datatype,
         }
+    }
+
+    fn build_generic_type(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> GenericType {
+        let mut base = String::new();
+        let mut generic = Type::default();
+        for pair in pairs {
+            match pair.as_rule() {
+                Rule::name_str => base = pair.as_str().into(),
+                Rule::datatype => generic = self.build_datatype(&mut pair.into_inner(), context),
+                _ => unreachable!()
+            }
+        }
+        let dt = GenericType { base: base.clone(), generic };
+        context.generic_types.insert(dt.to_string(), dt.clone());
+        dt
     }
 
     fn build_struct_type(&self, pair: &Pair<Rule>, context: &mut AstContext) -> String {

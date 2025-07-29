@@ -40,7 +40,7 @@ fn main() {
     let mut pairs: Pairs<Rule> = Program::parse(Rule::program, &input).unwrap();
     let mut ast = parser.gen_ast(&mut pairs, "main".into());
     read_core(parser, &mut ast);
-    let mut cache = BuildCache::new();
+    let mut cache = BuildCache::default();
     ast.build_imports(&mut cache);
     let gcc = GccContext::new(&context, ast.context.clone());
     let mut imports = HashSet::new();

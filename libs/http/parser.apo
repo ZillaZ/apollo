@@ -91,7 +91,6 @@ impl Headers {
     fn push(self: &Headers, header: Header) {
         if self.size == (self.capacity - 1) {
             self.capacity *= 2
-            printf("Header size: %d\n", size_of(header))
             self.headers = realloc(self.headers, size_of(header) * self.capacity)
         }
         self.headers[self.size] = header
@@ -113,7 +112,6 @@ impl Headers {
                 offset += line_end + 1
             }
             let line = copy.range(0, line_end)
-            printf("HL: %s\n", line.data)
             if (!flag) && line.is_empty() {
                 flag = true
             }else{
@@ -124,7 +122,6 @@ impl Headers {
                 let a = malloc(10)
                 let header = Header.from_string(kind, value)
                 headers.push(header)
-                printf("%s | %s\n", kind.data, value.data)
             }
         }
         return headers

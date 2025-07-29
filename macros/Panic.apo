@@ -1,0 +1,14 @@
+fn panic(...impls<Display>) {
+	let count = vararg_count!()
+	for i in (0..vararg_count) {
+		let format = {
+			if i < (vararg.count-1) {
+				return "%s "
+			}else{
+				return "%s"
+			}
+		}
+		printf(format, get_vararg!(i))
+	}
+	exit(1)
+}

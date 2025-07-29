@@ -12,7 +12,7 @@ use std::{
 #[derive(Clone, Debug, PartialEq)]
 pub struct TraitMethod {
     pub name: String,
-    pub params: Vec<Parameter>,
+    pub params: Vec<Arg>,
     pub datatype: Option<Type>,
 }
 
@@ -114,6 +114,13 @@ impl From<DataType> for Type {
     }
 }
 
+impl ToString for Type {
+    fn to_string(&self) -> String {
+        let prepend = (0..self.ref_count).map(|_| "&").collect::<String>();
+        format!("{prepend}{}", self.datatype.to_string())
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum ExpandSection {
     Head,
@@ -183,6 +190,18 @@ pub struct Macro {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct GenericType {
+    pub base: String,
+    pub generic: Type
+}
+
+impl ToString for GenericType {
+    fn to_string(&self) -> String {
+        format!("{}<{}>", self.base, self.generic.to_string())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum DataType {
     Float(u8),
     Int(u8),
@@ -195,6 +214,8 @@ pub enum DataType {
     Char,
     Bool,
     Any,
+    Implements(Vec<String>),
+    Generic(Rc<RefCell<GenericType>>)
 }
 
 impl ToString for DataType {
@@ -205,10 +226,15 @@ impl ToString for DataType {
             DataType::Bool => "bool".into(),
             DataType::Char => "char".into(),
             DataType::Int(b) => format!("i{}", b),
-            DataType::UInt(b) => format!("u{}", b),
+            DataType::UInt(b) => format!("ui{}", b),
             DataType::String => format!("string"),
             DataType::Array(_) => format!("array"),
-            DataType::StructType(st) => format!("struct {st}"),
+            DataType::StructType(st) => st.clone(),
+            DataType::Implements(ref traits) => traits.iter().fold(String::from("impls "), |acc, e| { format!("{acc} {e}")}),
+            DataType::Generic(ref rc) => {
+                let generic = rc.borrow();
+                generic.to_string()
+            }
             _ => panic!("{:?}", self),
         }
     }
@@ -218,15 +244,9 @@ impl ToString for DataType {
 struct VariadicValue(i32);
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum ParameterType {
-    Type(Type),
-    Implements(Vec<String>),
-}
-
-#[derive(Clone, Debug, PartialEq)]
 pub struct Arg {
     pub name: Name,
-    pub datatype: ParameterType,
+    pub datatype: Type,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -381,6 +401,7 @@ pub enum ValueEnum {
     FieldAccess(Rc<RefCell<FieldAccess>>),
     Range(RangeValue),
     Enum(Rc<RefCell<EnumValue>>),
+    Match(Rc<RefCell<Match>>),
     None,
 }
 
@@ -425,7 +446,7 @@ pub struct Return {
     pub value: Option<Value>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Block {
     pub expr: Vec<Rc<RefCell<Expr>>>,
     pub box_return: Option<Return>,
@@ -458,10 +479,11 @@ impl Block {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub enum FunctionKind {
     Exported,
     External,
+    #[default]
     Native,
 }
 
@@ -491,7 +513,7 @@ pub struct Closure {
     pub block: Rc<RefCell<Block>>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Function {
     pub kind: FunctionKind,
     pub name: Name,
@@ -684,6 +706,24 @@ pub struct Assembly {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub enum MatchCaseValue {
+    Default,
+    Value(ValueEnum)
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct MatchCase {
+    pub value: MatchCaseValue,
+    pub expr: Vec<Expr>
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Match {
+    pub value: ValueEnum,
+    pub cases: Vec<MatchCase>
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum Expr {
     Return(Return),
     Call(Call),
@@ -706,6 +746,7 @@ pub enum Expr {
     Assembly(Assembly),
     VariadicBlock(Block),
     Macro(Macro),
+    Match(Match)
 }
 
 impl Expr {

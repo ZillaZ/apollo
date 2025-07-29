@@ -52,7 +52,6 @@ impl String {
 
 	fn split(self: &String, target: char) -> SplitResult {
 		let count : ui8 = self.count(target) + 1
-		printf("Size %d\n", size_of(^self))
 		let rtn : &String = malloc(size_of(^self) * count)
 		let offset : ui8 = 0
 		for i in (0..count) {
