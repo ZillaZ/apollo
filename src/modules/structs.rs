@@ -1,3 +1,4 @@
+use gccjit::FunctionType;
 use pest::iterators::{Pair, Pairs};
 
 use crate::Rule;
@@ -202,6 +203,24 @@ impl ToString for GenericType {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct FunctionDatatype {
+    pub datatype: Option<Type>,
+    pub params: Vec<Type>
+}
+
+impl ToString for FunctionDatatype {
+    fn to_string(&self) -> String {
+        let params_str = self.params.iter().fold(String::new(), |acc, e| { format!("{acc},{}", e.to_string())  });
+        let datatype_str = if let Some(ref dt) = self.datatype {
+            format!("->{}", dt.to_string())
+        }else{
+            "".into()
+        };
+        format!("Fn({params_str}){datatype_str}")
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum DataType {
     Float(u8),
     Int(u8),
@@ -215,7 +234,8 @@ pub enum DataType {
     Bool,
     Any,
     Implements(Vec<String>),
-    Generic(Rc<RefCell<GenericType>>)
+    Generic(Rc<RefCell<GenericType>>),
+    Function(Rc<RefCell<FunctionDatatype>>)
 }
 
 impl ToString for DataType {

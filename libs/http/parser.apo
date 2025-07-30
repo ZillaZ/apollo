@@ -187,3 +187,15 @@ impl Request {
         return new Request { method: method path: path headers: headers payload: payload.data }
     }
 }
+
+struct Response {
+    code: i4
+    message: String
+    payload: &ui1
+}
+
+impl Response {
+    fn ok() -> Response {
+        return new Response { code: 200 message: String.from_str("OK") payload: malloc(0) }
+    }
+}

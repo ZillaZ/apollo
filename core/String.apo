@@ -120,4 +120,8 @@ impl String {
 	fn fmt(self: &String) -> string {
 		return self.data
 	}
+
+	fn equals(self: &String, other: &String) -> bool {
+		return (self.data == other.data)
+	}
 }

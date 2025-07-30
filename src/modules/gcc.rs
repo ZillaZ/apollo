@@ -1767,6 +1767,22 @@ impl<'a> GccContext<'a> {
             }
             DataType::Trait(ref name) => *memory.datatypes.get(name).unwrap(),
             DataType::Any => *memory.datatypes.get("Any").unwrap(),
+            DataType::Function(ref mut rc) => {
+                let mut function_type = rc.borrow_mut();
+                if let Some(dt) = memory.datatypes.get(&function_type.to_string()) {
+                    *dt
+                }else{
+                    let datatype = if let Some(ref mut dt) = function_type.datatype {
+                        self.parse_datatype(dt, memory)
+                    }else{
+                        <() as Typeable>::get_type(self.context)
+                    };
+                    let param_types = function_type.params.iter_mut().map(|x| self.parse_datatype(x, memory)).collect::<Vec<_>>();
+                    let dt = self.context.new_function_pointer_type(None, datatype, &param_types, false);
+                    memory.datatypes.insert(function_type.to_string(), dt);
+                    dt
+                }
+            }
             _ => unreachable!(),
         };
         if datatype.is_ref {
@@ -2015,45 +2031,15 @@ impl<'a> GccContext<'a> {
             .iter()
             .find(|x| *x.1 == dt)
             .expect(&format!("Datatype {:?} does not exists", dt));
-        let mut fn_name = format!("{dt_name}:{}", call.name.name.clone());
-        /*
+        let fn_name = format!("{dt_name}:{}", call.name.name.clone());
+
         println!(
             "Impls for {:?}: {:?}",
             dt,
             memory.impl_methods.get(&fn_name)
         );
-         *
-         */
-        let method = {
-            let aux = memory.datatypes.clone();
-            let (name, _) = aux.iter().find(|(_, v)| **v == dt).unwrap();
-            let impls = ast
-                .context
-                .impls
-                .get(name)
-                .expect(&format!("No implementations found for type {name}"));
-            let method = impls
-                .iter()
-                .map(|x| &x.methods)
-                .flatten()
-                .find(|x| x.name == *fn_name)
-                .expect(&format!("Method {} not found for {:?}", fn_name, dt));
-            let mut method = method.clone();
-            let params = self.parse_args(&mut method.params, memory);
-            let dt = if let Some(dt) = method.datatype {
-                self.parse_datatype(&mut structs::Type::from(dt), memory)
-            } else {
-                <() as Typeable>::get_type(self.context)
-            };
-            self.context.new_function(
-                None,
-                gccjit::FunctionType::Internal,
-                dt,
-                &params,
-                fn_name,
-                false,
-            )
-        };
+        let methods = memory.impl_methods.clone();
+        let method = methods.get(&fn_name).expect(&format!("No method {fn_name}")).get(&dt).unwrap();
         for i in 0..args.len() {
             if method.get_param_count() <= i {
                 break;
@@ -2065,7 +2051,7 @@ impl<'a> GccContext<'a> {
         }
         let value = self.context.new_call(
             None,
-            method,
+            *method,
             &args.iter().map(|x| x.rvalue()).collect::<Vec<RValue<'a>>>(),
         );
         if call.neg {
@@ -2124,6 +2110,9 @@ impl<'a> GccContext<'a> {
         }
 
         let fn_name = call.name.name.clone();
+        if let Some(var) = memory.variables.get(&memory.function_scope).unwrap().get(&fn_name) {
+            return GccValues::R(self.context.new_call_through_ptr(None, *var, &args.iter().map(|x| x.rvalue()).collect::<Vec<_>>()));
+        }
         if !memory.functions.contains_key(&fn_name) {
             let mut functions = ast.context.functions.clone();
             let mut function = functions.get_mut(&fn_name);
@@ -2244,9 +2233,15 @@ impl<'a> GccContext<'a> {
             }
         };
         let mut lhs = self.get_rc_value(&mut binary_op.lhs).unwrap();
-        let lhs = self.parse_value(&mut lhs, block, memory, ast);
+        let mut lhs = self.parse_value(&mut lhs, block, memory, ast);
         let mut rhs = self.get_rc_value(&mut binary_op.rhs).unwrap();
         let mut rhs = self.parse_value(&mut rhs, block, memory, ast);
+        if let Some(_) = memory.enum_variants.get(&lhs.get_type()) {
+            let lfield = lhs.get_type().is_struct().unwrap().get_field(0);
+            let rfield = rhs.get_type().is_struct().unwrap().get_field(0);
+            lhs = GccValues::R(lhs.rvalue().access_field(None, lfield));
+            rhs = GccValues::R(rhs.rvalue().access_field(None, rfield));
+        };
         if !lhs
             .rvalue()
             .get_type()

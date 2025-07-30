@@ -363,7 +363,6 @@ impl Ast {
                 for method in implementation.methods.iter_mut() {
                     method.name = format!("{name}:{}", method.name);
                     let mut function = Function::from(method);
-                    function.name.name = format!("{name}:{}", function.name.name);
                     let (e, i) = self.get_fn_dependencies(&function, cache);
                     impls.extend_from_slice(&i);
                     rtn.extend_from_slice(&e);
@@ -2143,6 +2142,9 @@ impl NoirParser {
                 Rule::generic_type => {
                     datatype = DataType::Generic(Rc::new(RefCell::new(self.build_generic_type(&mut pair.into_inner(), context))));
                 }
+                Rule::function_type => {
+                    datatype = DataType::Function(Rc::new(RefCell::new(self.build_function_type(&mut pair.into_inner(), context))));
+                }
                 rule => unreachable!("Got rule {:?}", rule),
             };
         }
@@ -2151,6 +2153,23 @@ impl NoirParser {
             ref_count,
             datatype,
         }
+    }
+
+    fn build_function_type(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> FunctionDatatype {
+        let mut datatype = None;
+        let mut params = Vec::new();
+        for pair in pairs {
+            match pair.as_rule() {
+                Rule::datatype => datatype = Some(self.build_datatype(&mut pair.into_inner(), context)),
+                Rule::function_type_params => params = self.build_function_type_params(&mut pair.into_inner(), context),
+                _ => unreachable!()
+            }
+        }
+        FunctionDatatype { datatype, params }
+    }
+
+    fn build_function_type_params(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> Vec<Type> {
+        pairs.map(|x| self.build_datatype(&mut x.into_inner(), context)).collect()
     }
 
     fn build_generic_type(&self, pairs: &mut Pairs<Rule>, context: &mut AstContext) -> GenericType {

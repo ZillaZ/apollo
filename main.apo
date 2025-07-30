@@ -1,4 +1,10 @@
-use std { http { server::Server parser::Request } }
+use std { http { server::Server parser { Request Response } } }
+
+fn get(request: Request) -> Response {
+	printf("Gozei nas calçakkkk\n")
+	return (Response.ok())
+}
 
 let server = Server.new("127.0.0.1:8080")
+server.reg_get("/", get)
 server.listen()

@@ -1,9 +1,57 @@
 use std::sockets::sockets { TcpListener }
-use std::http::parser { Request }
+use std::http::parser { Request Response HttpMethod }
+
+struct Endpoint {
+	method: HttpMethod
+	path: String
+	handler: Fn(Request)->Response
+}
+
+impl Endpoint {
+	fn handle(self: &Endpoint, request: Request) -> Response {
+		let fn_ptr = self.handler
+		return fn_ptr(request)
+	}
+}
+
+struct Endpoints {
+	endpoints: &Endpoint
+	size: i8
+	capacity: i8
+}
+
+impl Endpoints {
+	fn new() -> Endpoints {
+		let capacity: i8 = 8
+		let aux : Endpoint
+		return new Endpoints { endpoints: malloc(size_of(aux) * capacity) size: 0 capacity: capacity}
+	}
+
+	fn register(self: &Endpoints, endpoint: Endpoint) {
+		if self.size == (self.capacity - 1) {
+			self.capacity *= 2
+			self.endpoints = realloc(self.endpoints, self.capacity)
+		}
+		self.endpoints[self.size] = endpoint
+		self.size += 1
+		return
+	}
+
+	fn handle(self: &Endpoints, request: Request, socket: TcpSocket) {
+		for i in (0..self.size) {
+			let endpoint = self.endpoints[i]
+			if (request.method == endpoint.method) and request.path.equals(endpoint.path) {
+				endpoint.handle(request)
+			}
+		}
+		return
+	}
+}
 
 struct Server {
 	addr: string
 	listener: TcpListener
+	endpoints: Endpoints
 }
 
 impl Server {
@@ -19,8 +67,14 @@ impl Server {
 			let request_bytes = socket.read(&count)
 			let request_str = String.from_str(request_bytes)
 			let request = Request.parse(request_str)
-			request.headers.print()
+			self.endpoints.handle(request, socket)
 		}
+		return
+	}
+
+	fn reg_get(self: &Server, endpoint: string, handler: Fn(Request)->Response) {
+		let endpoint = new Endpoint { method:HttpMethod.Get path: String.from_str(endpoint) handler: handler }
+		self.endpoints.register(endpoint)
 		return
 	}
 }
