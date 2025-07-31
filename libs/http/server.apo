@@ -41,9 +41,17 @@ impl Endpoints {
 		for i in (0..self.size) {
 			let endpoint = self.endpoints[i]
 			if (request.method == endpoint.method) and request.path.equals(endpoint.path) {
-				endpoint.handle(request)
+				let response = endpoint.handle(request)
+				let bytes = response.as_string()
+				socket.write(bytes.data, bytes.len)
+				socket.close()
+				return
 			}
 		}
+		let response = Response.not_found()
+		let bytes = response.as_string()
+		socket.write(bytes.data, bytes.len)
+		socket.close()
 		return
 	}
 }
@@ -57,7 +65,7 @@ struct Server {
 impl Server {
 	fn new(addr: string) -> Server {
 		let listener = TcpListener.new(addr)
-		return new Server { addr: addr listener: listener }
+		return new Server { addr: addr listener: listener endpoints: Endpoints.new() }
 	}
 
 	fn listen(self: &Server) {

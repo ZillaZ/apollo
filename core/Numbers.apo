@@ -7,3 +7,23 @@ impl i8 {
 		}
 	}
 }
+
+impl i4 {
+	fn to_string(self: i4) -> String {
+		let copy = self
+		let len = 1
+		while copy > 9 {
+			copy /= 10
+			len += 1
+		}
+
+		let data : &char = malloc(len+1)
+		data[len] = '\0'
+		for i in (1..len) {
+			data[len-i] = (self % 10) + 48
+			self /= 10
+		}
+		data[0] = self + 48
+		return String.from_str(data)
+	}
+}

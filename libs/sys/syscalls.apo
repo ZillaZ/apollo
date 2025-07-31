@@ -87,6 +87,38 @@ syscall
 	return ret_count
 }
 
+fn write(fd: i8, data: &ui1, count: i8) -> i8 {
+	let wrote : i8 = -1
+	#asm volatile {
+"
+mov %1, %%rdi
+mov %2, %%rsi
+mov %3, %%rdx
+mov $0x01, %%rax
+syscall
+"
+		:in { ("r" fd) ("r" data) ("r" count) }
+		:out { ("=a" wrote) }
+		:clob { "rdi" "rsi" "rdx" "rcx" "r11" "memory"}
+	}
+	return wrote
+}
+
+fn close(fd: i8) -> i8 {
+	let result : i8 = -1
+	#asm volatile {
+"
+mov %1, %%rdi
+mov $0x03, %%rax
+syscall
+"
+		:in { ("r" fd) }
+		:out { ("=a" result) }
+		:clob { "rdi" "rcx" "r11" "memory" }
+	}
+	return result
+}
+
 fn set_sock_opt(sock_fd: i8, level: i8, opt: i8) -> i8 {
 	let optval : i8 = 1
 	let optval_addr = &optval

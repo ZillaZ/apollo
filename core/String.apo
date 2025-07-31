@@ -16,11 +16,13 @@ impl String {
 	}
 
 	fn from_str(value: string) -> String {
-		let i = 0
-		while value[i] != '\0' {
-			i += 1
+		let len = strlen(value, 999999)
+		if len == (-1) {
+			exit(99)
 		}
-		return new String { data: value len: i capacity: i }
+		let data : &char = malloc(len)
+		memcpy(data, value, len)
+		return new String { data: data len: len capacity: len }
 	}
 
 	fn range(self: &String, start: ui8, end: ui8) -> String {
@@ -88,7 +90,7 @@ impl String {
 			if self.data[l].is_whitespace() { l += 1 } else { flag = true }
 		}
 		let r = self.len
-		while (r > 0) and (!flag) {
+		while (r > l) and (!flag) {
 			if self.data[r].is_whitespace() { r -= 1 } else { flag = true }
 		}
 		let alloc: &char = malloc(r - l + 1)
@@ -122,6 +124,61 @@ impl String {
 	}
 
 	fn equals(self: &String, other: &String) -> bool {
-		return (self.data == other.data)
+		if self.len != other.len { return false }
+		for i in (0..self.len) {
+			if self.data[i] != other.data[i] {
+				return false
+			}
+		}
+		return true
 	}
+
+	fn eq_str(self: &String, other: string) -> bool {
+		let len = strlen(other, self.len)
+		if (len == (-1) or self.len != len) { return false }
+		for i in (0..self.len) {
+			if self.data[i] != other[i] { return false }
+		}
+		return true
+	}
+
+	fn push_char(self: &String, append: char) {
+		self.check_bounds(1)
+		self.data[self.len] = append
+		self.len += 1
+		return
+	}
+
+	fn push_str(self: &String, append: string, max: i8) {
+		let len = strlen(append, max)
+		self.check_bounds(len)
+		for i in (self.len..(self.len + len)) {
+			self.data[i] = append[i - self.len]
+		}
+		self.len += len
+		return
+	}
+
+	fn push(self: &String, append: String) {
+		self.check_bounds(append.len)
+		let ptr : &char = self.data[self.len]
+		memcpy(ptr, append.data, append.len)
+		self.len += append.len
+		return
+	}
+
+	fn check_bounds(self: &String, extra_size: i8) {
+		if (self.len + extra_size) >= (self.capacity - 1) {
+			self.capacity = self.len + extra_size
+			self.data = realloc(self.data, self.capacity)
+		}
+		return
+	}
+}
+
+fn strlen(other: string, max: i8) -> i8 {
+	for i in (0..max) {
+		if other[i] == '\0' { return i }
+	}
+	return -1
 }

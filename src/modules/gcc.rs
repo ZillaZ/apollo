@@ -1654,6 +1654,9 @@ impl<'a> GccContext<'a> {
         if expandable {
             return None;
         }
+        if memory.built_functions.contains(&function.name.name) {
+            return None;
+        }
         if let Some(function) = memory.functions.get(&function.name.name) {
             return Some(*function);
         }
@@ -1687,6 +1690,7 @@ impl<'a> GccContext<'a> {
         ast: &mut Ast,
     ) {
         if let Some(new_function) = self.parse_function_signature(function, memory, ast) {
+            memory.built_functions.insert(function.name.name.clone());
             match function.kind {
                 FunctionKind::Native | FunctionKind::Exported => {
                     let aux = memory.function_scope.clone();

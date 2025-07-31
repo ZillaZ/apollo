@@ -1,4 +1,4 @@
-use std::sys::syscalls { set_sock_opt read socket_accept new_socket bind_socket_ipv4 socket_listen }
+use std::sys::syscalls { set_sock_opt read socket_accept new_socket bind_socket_ipv4 socket_listen write close }
 
 fn pton(addr: string) -> array(ui1 4) {
 	let len = 0
@@ -58,6 +58,7 @@ impl TcpSocket {
 		let socket_fd = new_socket(af_inet, tcp_stream)
 		return new TcpSocket { fd: socket_fd }
 	}
+
 	fn read(self: &TcpSocket, count: &ui8) -> &ui1 {
 		let buffer_size = 128
 		let buffer : &ui1 = malloc(buffer_size)
@@ -76,6 +77,14 @@ impl TcpSocket {
 		}
 		^count = bytes_read
 		return buffer
+	}
+
+	fn write(self: &TcpSocket, data: &ui1, count: i8) -> i8 {
+		return write(self.fd, data, count)
+	}
+
+	fn close(self: &TcpSocket) -> i8 {
+		return close(self.fd)
 	}
 }
 

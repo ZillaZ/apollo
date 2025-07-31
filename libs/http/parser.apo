@@ -31,22 +31,24 @@ impl HttpMethod {
         let space : i8 = data.find(' ')
         if space < 0 { exit(1) }
         let method_str = data.range(0, space)
-        if "GET" == method_str.data {
+        method_str.trim()
+        if method_str.eq_str("GET") {
             return HttpMethod.Get
-        }else if "POST" == method_str.data {
+        }else if method_str.eq_str("POST") {
             return HttpMethod.Post
-        }else if "DELETE" == method_str.data {
+        }else if method_str.eq_str("DELETE") {
             return HttpMethod.Delete
-        }else if "PUT" == method_str.data {
+        }else if method_str.eq_str("PUT") {
             return HttpMethod.Put
-        }else if "PATCH" == method_str.data {
+        }else if method_str.eq_str("PATCH") {
             return HttpMethod.Patch
-        }else if "HEAD" == method_str.data {
+        }else if method_str.eq_str("HEAD") {
             return HttpMethod.Head
         }else{
             return HttpMethod.Options
         }
     }
+
     fn print(self: HttpMethod) {
         if self.Get {
             printf("GET\n")
@@ -56,6 +58,15 @@ impl HttpMethod {
             printf("Not implemented yet\n")
         }
         return
+    }
+
+    fn fmt(self: HttpMethod) -> string {
+        if self.Get {
+            return "GET"
+        }else if self.Post {
+            return "POST"
+        }
+        return "Not implemented yet"
     }
 }
 
@@ -161,12 +172,13 @@ impl Request {
         let new_line = data.find('\n')
         if new_line < 0 { exit(90) }
         let method = HttpMethod.parse(data)
-        let path_start : i8 = data.find(' ')
+        let path_start : i8 = data.find(' ') + 1
         if path_start < 0 { exit(100) }
         let sub = data.range(path_start, new_line)
         let path_end = sub.find(' ') + path_start
         if path_end < 0 { exit(99) }
         let path = data.range(path_start, path_end)
+        path.trim()
         let first_line = data.range(0, new_line)
         let headers_str = data.range(new_line + 1, data.len)
         let headers : Headers = Headers.build(headers_str)
@@ -191,11 +203,26 @@ impl Request {
 struct Response {
     code: i4
     message: String
-    payload: &ui1
+    payload: String
 }
 
 impl Response {
     fn ok() -> Response {
-        return new Response { code: 200 message: String.from_str("OK") payload: malloc(0) }
+        return new Response { code: 200 message: String.from_str("OK") payload: String.new() }
+    }
+
+    fn not_found() -> Response {
+        return new Response { code: 404 message: String.from_str("Not Found") payload: String.new() }
+    }
+
+    fn as_string(self: &Response) -> String {
+        let response = String.from_str("HTTP/1.1")
+        response.push_char(' ')
+        response.push(self.code.to_string())
+        response.push_char(' ')
+        response.push(self.message)
+        response.push_str("\n\n", 5)
+        response.push(self.payload)
+        return response
     }
 }

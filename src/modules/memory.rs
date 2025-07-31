@@ -35,6 +35,7 @@ pub struct Memory<'a> {
     pub expandable_macros: HashMap<String, (ExpandSection, AstFunction)>,
     pub opaque: HashSet<Type<'a>>,
     pub should_delay_ref_ops: bool,
+    pub built_functions: HashSet<String>
 }
 
 impl<'a> Memory<'a> {
@@ -78,6 +79,7 @@ impl<'a> Memory<'a> {
             expandable_macros: HashMap::new(),
             opaque: HashSet::new(),
             should_delay_ref_ops: false,
+            built_functions: HashSet::new()
         }
     }
     pub fn unconst_type(&self, r#type: Type<'a>) -> Type<'a> {
