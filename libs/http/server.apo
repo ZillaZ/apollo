@@ -45,6 +45,8 @@ impl Endpoints {
 				let bytes = response.as_string()
 				socket.write(bytes.data, bytes.len)
 				socket.close()
+				response.free()
+				bytes.free()
 				return
 			}
 		}
@@ -52,6 +54,8 @@ impl Endpoints {
 		let bytes = response.as_string()
 		socket.write(bytes.data, bytes.len)
 		socket.close()
+		response.free()
+		bytes.free()
 		return
 	}
 }
@@ -80,8 +84,8 @@ impl Server {
 		return
 	}
 
-	fn reg_get(self: &Server, endpoint: string, handler: Fn(Request)->Response) {
-		let endpoint = new Endpoint { method:HttpMethod.Get path: String.from_str(endpoint) handler: handler }
+	fn register_endpoint(self: &Server, method: HttpMethod, endpoint: string, handler: Fn(Request)->Response) {
+		let endpoint = new Endpoint { method: method path: String.from_str(endpoint) handler: handler }
 		self.endpoints.register(endpoint)
 		return
 	}

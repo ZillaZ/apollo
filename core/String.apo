@@ -152,9 +152,8 @@ impl String {
 	fn push_str(self: &String, append: string, max: i8) {
 		let len = strlen(append, max)
 		self.check_bounds(len)
-		for i in (self.len..(self.len + len)) {
-			self.data[i] = append[i - self.len]
-		}
+		let ptr : &char = self.data[self.len]
+		memcpy(ptr, append, len)
 		self.len += len
 		return
 	}

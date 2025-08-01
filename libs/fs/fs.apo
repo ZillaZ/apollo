@@ -1,0 +1,31 @@
+use std::sys::syscalls { open }
+
+struct File {
+	fd: i8
+}
+
+impl File {
+	fn open(path: string) -> File {
+		let fd = open(path, 2, 0)
+		return new File { fd: fd }
+	}
+
+	fn read(self: &File) -> String {
+		let buffer_size = 128
+		let buffer : &ui1 = malloc(buffer_size)
+		let bytes_read = read(^self.fd, buffer, buffer_size)
+		while bytes_read == buffer_size {
+			if bytes_read >= buffer_size {
+				buffer_size *= 2
+				buffer = realloc(buffer, buffer_size)
+			}
+			let r = read(^self.fd, &buffer[bytes_read], buffer_size - bytes_read)
+			if r < 0 {
+				printf("Error while reading fd %d: %d\n", ^self.fd, r)
+			}else{
+				bytes_read += r
+			}
+		}
+		return new String { data: buffer len: bytes_read capacity: buffer_size }
+	}
+}

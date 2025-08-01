@@ -84,6 +84,20 @@ impl Header {
     fn from_string(key: String, value: String) -> Header {
         return new Header { key: key value: value }
     }
+
+    fn to_string(self: &Header) -> String {
+        let rtn = String.new()
+        rtn.push(self.key)
+        rtn.push_str(": ", 2)
+        rtn.push(self.value)
+        return rtn
+    }
+
+    fn free(self: &Header) {
+        self.key.free()
+        self.value.free()
+        return
+    }
 }
 
 struct Headers {
@@ -97,6 +111,24 @@ impl Headers {
         let capacity = 8
         let aux : Header
         return new Headers { headers: malloc(size_of(aux) * capacity) size: 0 capacity: capacity}
+    }
+
+    fn to_string(self: &Headers) -> String {
+        let rtn = String.new()
+        for i in (0..self.size) {
+            let header_str = self.headers[i].to_string()
+            rtn.push(header_str)
+            rtn.push_char('\n')
+            header_str.free()
+        }
+        return rtn
+    }
+
+    fn free(self: &Headers) {
+        for i in (0..self.size) {
+            self.headers[i].free()
+        }
+        return
     }
 
     fn push(self: &Headers, header: Header) {
@@ -164,7 +196,7 @@ struct Request {
     method: HttpMethod
     path: String
     headers: Headers
-    payload: &ui1
+    payload: String
 }
 
 impl Request {
@@ -196,33 +228,54 @@ impl Request {
             }
         }
         let payload = headers_str.range(offset, headers_str.len)
-        return new Request { method: method path: path headers: headers payload: payload.data }
+        return new Request { method: method path: path headers: headers payload: payload }
+    }
+
+    fn free(self: &Request) {
+        self.path.free()
+        self.headers.free()
+        self.payload.free()
+        return
     }
 }
 
 struct Response {
     code: i4
     message: String
+    headers: Headers
     payload: String
 }
 
 impl Response {
     fn ok() -> Response {
-        return new Response { code: 200 message: String.from_str("OK") payload: String.new() }
+        return new Response { code: 200 message: String.from_str("OK") headers: Headers.new() payload: String.new() }
     }
 
     fn not_found() -> Response {
-        return new Response { code: 404 message: String.from_str("Not Found") payload: String.new() }
+        return new Response { code: 404 message: String.from_str("Not Found") headers: Headers.new() payload: String.new() }
     }
 
     fn as_string(self: &Response) -> String {
         let response = String.from_str("HTTP/1.1")
         response.push_char(' ')
-        response.push(self.code.to_string())
+        let code = self.code.to_string()
+        response.push(code)
+        code.free()
         response.push_char(' ')
         response.push(self.message)
-        response.push_str("\n\n", 5)
+        response.push_char('\n')
+        let headers_str = self.headers.to_string()
+        response.push(headers_str)
+        headers_str.free()
+        response.push_char('\n')
         response.push(self.payload)
         return response
+    }
+
+    fn free(self: &Response) {
+        self.message.free()
+        self.headers.free()
+        self.payload.free()
+        return
     }
 }

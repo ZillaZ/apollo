@@ -104,6 +104,23 @@ syscall
 	return wrote
 }
 
+fn open(path: string, flags: i8, mode: i8) -> i8 {
+	let fd = -1
+	#asm volatile {
+"
+mov %1, %%rdi
+mov %2, %%rsi
+mov %3, %%rdx
+mov $0x02, %%rax
+syscall
+"
+		:in { ("r" path) ("r" flags) ("r" mode) }
+		:out { ("=a" fd) }
+		:clob { "rdi" "rsi" "rdx" "rcx" "r11" "memory" }
+	}
+	return fd
+}
+
 fn close(fd: i8) -> i8 {
 	let result : i8 = -1
 	#asm volatile {

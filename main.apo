@@ -1,10 +1,18 @@
-use std { http { server::Server parser { Request Response } } }
+use std { fs::fs::File http { server::Server parser { HttpMethod Request Response } } }
 
 fn get(request: Request) -> Response {
-	printf("Gozei nas calçakkkk\n")
 	return (Response.ok())
 }
 
+fn favicon(request: Request) -> Response {
+	let response = Response.ok()
+	let file = File.open("favicon.ico")
+	let bytes = file.read()
+	response.payload = bytes
+	return response
+}
+
 let server = Server.new("127.0.0.1:8080")
-server.reg_get("/", &get)
+server.register_endpoint(HttpMethod.Get, "/", &get)
+server.register_endpoint(HttpMethod.Get, "/favicon.ico", &favicon)
 server.listen()
