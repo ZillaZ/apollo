@@ -734,7 +734,7 @@ pub enum MatchCaseValue {
 #[derive(Clone, Debug, PartialEq)]
 pub struct MatchCase {
     pub value: MatchCaseValue,
-    pub expr: Vec<Expr>
+    pub expr: Block
 }
 
 #[derive(Clone, Debug, PartialEq)]

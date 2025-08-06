@@ -1,0 +1,83 @@
+{
+  "test_suite_name": "Comprehensive Parser Test",
+  "version": 1.0,
+  "description": "A JSON file designed to test a parser's ability to handle various data types, structures, and edge cases.",
+  "simple_key_value_pairs": {
+    "string_field": "Hello, World!",
+    "integer_field": 42,
+    "float_field": 3.14159,
+    "boolean_true": true,
+    "boolean_false": false,
+    "null_field": null
+  },
+  "special_characters_and_formats": {
+    "string_with_quotes": "This is a string with \"quotes\".",
+    "string_with_escapes": "Line 1\\nLine 2\\tTabbed.",
+    "unicode_string": "Hello, \uD83C\uDF0E!",
+    "scientific_notation": 6.022e23
+  },
+  "arrays": {
+    "simple_array": [1, 2, 3, 4, 5],
+    "mixed_type_array": [
+      "string",
+      100,
+      -99.9,
+      true,
+      null,
+      {
+        "object_in_array": "yes"
+      }
+    ],
+    "nested_arrays": [
+      [1, 2],
+      [3, 4, [5]]
+    ]
+  },
+  "nested_objects": {
+    "level_1": {
+      "level_2": {
+        "level_3_key": "Reached the bottom!"
+      },
+      "sibling_key": "I am on level 2."
+    }
+  },
+  "edge_cases": {
+    "empty_string": "",
+    "empty_object": {},
+    "empty_array": [],
+    "zero_value": 0,
+    "key_with_spaces": "This key is valid.",
+    "key_with_special_chars!@#$%^&*()": "This key is also valid."
+  },
+  "complex_structure": [
+    {
+      "id": "user_1",
+      "is_active": true,
+      "profile": {
+        "name": "Alex",
+        "age": 30,
+        "tags": ["developer", "json", "testing"]
+      },
+      "friends": [
+        {
+          "id": "user_2",
+          "name": "Beth"
+        },
+        {
+          "id": "user_3",
+          "name": "Charlie"
+        }
+      ]
+    },
+    {
+      "id": "user_2",
+      "is_active": false,
+      "profile": {
+        "name": "Beth",
+        "age": null,
+        "tags": ["designer", "qa"]
+      },
+      "friends": []
+    }
+  ]
+}

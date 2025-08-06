@@ -362,13 +362,14 @@ impl Ast {
             for implementation in aimpls.iter_mut() {
                 for method in implementation.methods.iter_mut() {
                     method.name = format!("{name}:{}", method.name);
-                    let mut function = Function::from(method);
+                    let function = Function::from(method);
                     let (e, i) = self.get_fn_dependencies(&function, cache);
                     impls.extend_from_slice(&i);
                     rtn.extend_from_slice(&e);
                 }
             }
             impls.extend(aimpls.clone());
+            self.context.impls.remove(name);
         }
         rtn
     }
@@ -461,6 +462,7 @@ impl Ast {
         }
         let deps = self.resolve_deps_impls(&dt.name, &mut impls, cache);
         rtn.extend_from_slice(&deps);
+
         println!(
             "({}) Resolved deps for {} are {:?}",
             self.namespace,
@@ -888,7 +890,7 @@ impl NoirParser {
             Rule::default => MatchCaseValue::Default,
             _ => MatchCaseValue::Value(self.build_single_value(first, context).value)
         };
-        let expr = self.build_expression(pairs, context);
+        let expr = self.build_block(pairs, context);
         MatchCase {
             value,
             expr
@@ -1735,6 +1737,9 @@ impl NoirParser {
                 "\\t" => '\t',
                 "\\0" => '\0',
                 "\\r" => '\r',
+                "\\\\" => '\\',
+                "\\\"" => '"',
+                "\\'" => '\'',
                 seq => unreachable!("Found sequence {} {:?}", seq, seq.as_bytes()),
             }
         } else {

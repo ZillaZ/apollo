@@ -11,7 +11,7 @@ array_access         =  { (call | name) ~ index_access }
 string               = @{ "\"" ~ char* ~ "\"" }
 char                 = _{
     !("\"" | "\\") ~ ANY
-  | "\\" ~ ("\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t" | "0")
+  | "\\" ~ ("\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t" | "0" | "'")
   | "\\" ~ ("u" ~ ASCII_HEX_DIGIT{4})
 }
 char_value           = @{ "'" ~ char ~ "'" }

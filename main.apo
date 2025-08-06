@@ -1,4 +1,5 @@
 use std { fs::fs::File http { server::Server parser { HttpMethod Request Response } } }
+use std::json::json { JsonParser }
 
 fn get(request: Request) -> Response {
 	return (Response.ok())
@@ -12,7 +13,8 @@ fn favicon(request: Request) -> Response {
 	return response
 }
 
-let server = Server.new("127.0.0.1:8080")
-server.register_endpoint(HttpMethod.Get, "/", &get)
-server.register_endpoint(HttpMethod.Get, "/favicon.ico", &favicon)
-server.listen()
+let file = File.open("package.json")
+let json = file.read()
+printf("BEFORE: %s\n", json.data)
+let parser = JsonParser.new(json)
+parser.parse()

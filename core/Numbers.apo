@@ -26,4 +26,8 @@ impl i4 {
 		data[0] = self + 48
 		return String.from_str(data)
 	}
+
+	fn is_whitespace(self: char) -> bool {
+		return (self == ' ') or (self == '\n') or (self == '\r') or (self == '\t')
+	}
 }

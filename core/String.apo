@@ -1,3 +1,8 @@
+struct FirstMatch {
+	c: char
+	index: i8
+}
+
 struct SplitResult {
 slice: &String
 count: ui8
@@ -172,6 +177,80 @@ impl String {
 			self.data = realloc(self.data, self.capacity)
 		}
 		return
+	}
+
+	fn slice(self: &String, start: ui8, end: ui8) -> String {
+		if (end < start) or (start > self.len) or (end > self.len) {
+			exit(7)
+		}
+		let data : &char = self.data[start]
+		let len = end - start
+		let capacity = end - start
+		return new String { data: data len: len capacity: capacity }
+	}
+
+	fn find_enclosing(self: &String, target: char) -> i8 {
+		let count = 1
+		let escaped = false
+		let sign = 1
+		for i in (0..self.len) {
+			let c = self.data[i]
+			if escaped {
+				escaped = false
+			}else if (c == '\\') {
+                escaped = true
+            }else if target == c {
+				return i
+			}
+		}
+		return -1
+	}
+
+	fn first_match(self: &String, targets: &char, len: ui8) -> FirstMatch {
+		printf("first match started\n")
+		printf("self is %s\n", self.data)
+		for i in (0..self.len) {
+			let out = self.data[i]
+			for j in (0..len) {
+				let in = targets[j]
+				if in == out {
+					printf("bout to return\n")
+					return new FirstMatch { c: in index: i }
+				}
+			}
+		}
+		return new FirstMatch { c: ' ' index: (-1) }
+	}
+
+	fn first_exclusive_match(self: &String, targets: &char, len: ui8) -> FirstMatch {
+		for i in (0..self.len) {
+			let out = self.data[i]
+			for j in (0..len) {
+				let in = targets[j]
+				if in == out {
+					return new FirstMatch { c: in index: i }
+				}
+			}
+			if !out.is_whitespace() {
+				return new FirstMatch { c: ' ' index: (-1) }
+			}
+		}
+		return new FirstMatch { c: ' ' index: (-1) }
+	}
+
+
+	fn is_numerical(self: &String, is_float: &bool) -> bool {
+		for i in (0..self.len) {
+			let c = self.data[i]
+			if ^is_float and c == '.' {
+				return false
+			}else if c == '.' {
+				^is_float = true
+			}else if c.is_whitespace() or (c < 48) or (c > 58) {
+				return false
+			}
+		}
+		return true
 	}
 }
 

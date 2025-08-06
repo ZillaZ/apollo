@@ -1,6 +1,5 @@
 use gccjit::{
-    BinaryOp, Block, ComparisonOp, Context, LValue, Parameter, RValue, ToLValue, ToRValue, Type,
-    Typeable, UnaryOp,
+    BinaryOp, Block, ComparisonOp, Context, Field, LValue, Parameter, RValue, ToLValue, ToRValue, Type, Typeable, UnaryOp
 };
 use std::any::Any;
 use std::cell::RefCell;
@@ -13,9 +12,7 @@ use super::ast_context::AstContext;
 use super::memory::Memory;
 use super::parser::{Ast, BuildCache};
 use super::structs::{
-    self, Arg, AssignVar, Condition, Constructor, DataType, Enum, EnumValue, FieldAccessName,
-    ForLoop, Impl, ImplMethod, MacroKind, Name, Overloaded, OverloadedOp,
-    RangeValue, RefOp, StructDecl, Value, ValueEnum,
+    self, Arg, AssignVar, Condition, Constructor, DataType, Enum, EnumValue, FieldAccessName, ForLoop, Impl, ImplMethod, MacroKind, Match, MatchCaseValue, Name, Overloaded, OverloadedOp, RangeValue, RefOp, StructDecl, Value, ValueEnum
 };
 use super::structs::{Expr, FunctionKind, LibLink, WhileLoop};
 use crate::modules::structs::{ExpandSection, Otherwise, RangeType};
@@ -313,9 +310,43 @@ impl<'a> GccContext<'a> {
                     let result = self.parse_macro_call(macro_call, block, memory, ast);
                     block.add_eval(None, result.rvalue());
                 }
+                Expr::Match(ref mut ast_match) => {
+                    *block = self.parse_match(ast_match, block, memory, ast);
+                }
                 _ => continue,
             }
         }
+    }
+
+    fn parse_match(&'a self, ast_match: &mut Match, block: &mut Block<'a>, memory: &mut Memory<'a>, ast: &mut Ast) -> Block<'a> {
+        let to_match = self.parse_value(&mut Value::non_heap(ast_match.value.clone()), block, memory, ast);
+        let function = block.get_function();
+        let mut new_block = function.new_block(self.uuid());
+        block.end_with_jump(None, new_block);
+        let mut should_end = true;
+        for case in ast_match.cases.iter_mut() {
+            should_end = should_end && case.expr.box_return.is_some();
+            match case.value {
+                MatchCaseValue::Default => {
+                    let mut then_block = function.new_block(self.uuid());
+                    if case.expr.box_return.is_none() {
+                        new_block = function.new_block(self.uuid())
+                    }
+                    new_block.end_with_jump(None, then_block);
+                    self.parse_block(&mut case.expr, &mut then_block, memory, ast);
+                }
+                MatchCaseValue::Value(ref val) => {
+                    let matching = self.parse_value(&mut Value::non_heap(val.clone()), &mut new_block, memory, ast);
+                    let mut then_block = function.new_block(self.uuid());
+                    let otherwise_block = function.new_block(self.uuid());
+                    let condition = self.context.new_comparison(None, ComparisonOp::Equals, to_match.rvalue(), matching.rvalue());
+                    new_block.end_with_conditional(None, condition, then_block, otherwise_block);
+                    new_block = otherwise_block;
+                    self.parse_block(&mut case.expr, &mut then_block, memory, ast);
+                }
+            }
+        }
+        return new_block
     }
 
     fn parse_macro_call(
@@ -888,6 +919,7 @@ impl<'a> GccContext<'a> {
                 .map(|x| &x.name)
                 .collect::<Vec<_>>()
         );
+        self.check_recursive_structs(ast, memory);
         for (_name, dt) in ast.context.structs.clone().iter_mut() {
             println!("BUILDING STRUCT {_name}");
             self.parse_struct(dt, memory);
@@ -925,6 +957,41 @@ impl<'a> GccContext<'a> {
         }
         for (_, function) in ast.context.functions.clone().iter_mut() {
             self.parse_function(function, memory, ast);
+        }
+    }
+
+    fn check_recursive_structs(&'a self, ast: &mut Ast, memory: &mut Memory<'a>) {
+        fn recursive_descent(dt: &str, fields: &Vec<structs::FieldDecl>, ast: &Ast) -> bool {
+            for field in fields.iter() {
+                if let DataType::StructType(ref name) = field.datatype.datatype {
+                    if dt == name {
+                        return true
+                    }
+                    if let Some(f_dt) = ast.context.structs.get(name) {
+                        if recursive_descent(dt, &f_dt.fields, ast){
+                            return true
+                        }
+                    }else{
+                        let enum_def = ast.context.enums.get(name).unwrap();
+                        let val = enum_def.variants.iter().find(|x| if let Some(ref d) = x.r#type { if let DataType::StructType(ref a) = d.datatype { a == dt } else { false } } else { false });
+                        if let Some(val) = val {
+                            let DataType::StructType(d) = val.r#type.clone().unwrap().datatype else { unreachable!() };
+                            if dt == d {
+                                return true
+                            }
+                        }
+                    };
+                }
+            }
+            return false
+        }
+        for (dt, decl) in ast.context.structs.iter() {
+            if !recursive_descent(dt, &decl.fields, ast) {
+                continue
+            }
+            let opaque = self.context.new_opaque_struct_type(None, dt);
+            memory.datatypes.insert(dt.into(), opaque.as_type());
+            memory.opaque.insert(opaque.as_type());
         }
     }
 
@@ -1323,7 +1390,7 @@ impl<'a> GccContext<'a> {
                 }
                 lvalue
             }
-            _ => unreachable!(),
+            value => unreachable!("Found {:?}", value),
         }
     }
 
@@ -1826,10 +1893,10 @@ impl<'a> GccContext<'a> {
         } else {
             let enum_match = ast_if.enum_match.as_ref().unwrap();
             let vars = memory.variables.get(&memory.function_scope).unwrap();
-            let var = vars.get(&enum_match.name).unwrap();
-            let enum_type = var.to_rvalue().get_type().is_struct().unwrap();
+            let var = vars.get(&enum_match.name).expect(&format!("Var {} not in scope", enum_match.name));
+            let enum_type = var.to_rvalue().get_type().is_struct().expect(&format!("Not a struct {}", enum_match.name));
             let variants = memory.enum_variants.get(&enum_type.as_type()).unwrap();
-            let (index, field) = variants.get(&enum_match.variant).unwrap();
+            let (index, field) = variants.get(&enum_match.variant).expect(&format!("Enum variant {} does not exist", enum_match.variant));
             let kind_field = enum_type.get_field(0);
             let variant_field = enum_type.get_field(1);
             let active_field = var.access_field(None, kind_field);
@@ -1842,7 +1909,9 @@ impl<'a> GccContext<'a> {
                 .new_comparison(None, ComparisonOp::Equals, active_field, matching)
         };
         let function = block.get_function();
-        let mut then_block = function.new_block(self.uuid());
+        let mut then_block = function.new_block(format!("if_{}", self.uuid()));
+        let mut else_block = function.new_block(self.uuid());
+        block.end_with_conditional(None, condition, then_block, else_block);
         let mut ast_block = self.get_rc_value(&mut ast_if.block).unwrap();
         if let Some((ref name, (value, index, field))) = tb_declared {
             let value = if let Some(field) = field {
@@ -1857,8 +1926,6 @@ impl<'a> GccContext<'a> {
         }
         self.parse_block(&mut ast_block, &mut then_block, memory, ast);
         let mut else_should_continue = false;
-        let mut else_block = function.new_block(self.uuid());
-        block.end_with_conditional(None, condition, then_block, else_block);
         self.inherit_tail_expr(&block, &else_block, memory);
         if let Some(ref mut otherwise) = ast_if.otherwise {
             let mut otherwise = self.get_rc_value(otherwise).unwrap();
@@ -1868,8 +1935,6 @@ impl<'a> GccContext<'a> {
                     self.parse_block(block, &mut else_block, memory, ast);
                 }
                 Otherwise::If(ref mut ast_if) => {
-                    let block = self.get_rc_value(&mut ast_if.block).unwrap();
-                    else_should_continue = block.box_return.is_none();
                     else_block = self.parse_if(ast_if, &mut else_block, memory, ast);
                 }
             }

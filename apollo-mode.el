@@ -19,7 +19,7 @@
 (setq apollo-imported "::{\\([[:space:]]*\\(\\w\\|_\\)+\/\\(\\w\\|_\\)+[[:space:]]*\\)+}\\|\\(?:::\\)\\(\\w\\|_\\)+\n")
 
 (defvar apollo-keywords nil "Apollo keywords.")
-(setq apollo-keywords '("impl" "as" "extern" "new" "link" "with" "fn" "if" "else" "return" "trait" "struct" "use" "let" "enum" "for" "while"))
+(setq apollo-keywords '("match" "impl" "as" "extern" "new" "link" "with" "fn" "if" "else" "return" "trait" "struct" "use" "let" "enum" "for" "while"))
 
 (defvar apollo-types nil "Apollo types.")
 (setq apollo-types '("f1" "f2" "f4" "f8" "i1" "i2" "i4" "i8" "ui1" "ui2" "ui4" "ui8" "ui16" "char" "string" "array" "bool"))
