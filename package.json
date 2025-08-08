@@ -1,3 +1,5 @@
 {
-	"name": "Lucas"
+	"name": "Lucas",
+    "age": 20,
+    "neg": -123
 }

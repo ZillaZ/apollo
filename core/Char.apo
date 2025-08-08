@@ -1,5 +1,6 @@
 impl char {
 	fn is_whitespace(self: char) -> bool {
-		return (self == ' ') or (self == '\n') or (self == '\r') or (self == '\t')
+		return ((self == ' ')
+			or ((self > 8) and (self < 14)))
 	}
 }

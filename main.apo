@@ -1,18 +1,6 @@
 use std { fs::fs::File http { server::Server parser { HttpMethod Request Response } } }
 use std::json::json { JsonParser }
 
-fn get(request: Request) -> Response {
-	return (Response.ok())
-}
-
-fn favicon(request: Request) -> Response {
-	let response = Response.ok()
-	let file = File.open("favicon.ico")
-	let bytes = file.read()
-	response.payload = bytes
-	return response
-}
-
 let file = File.open("package.json")
 let json = file.read()
 let parser = JsonParser.new(json)
@@ -23,5 +11,9 @@ if result.Err(err) {
 }else if result.Value(val) {
 	let object = val.as_object()
 	let name = object.get("name")
+	let age = object.get("age")
+	let neg = object.get("neg")
 	printf("Name is %s\n", name.fmt())
+	printf("Age is %s\n", age.fmt())
+	printf("Neg is %s\n", neg.fmt())
 }

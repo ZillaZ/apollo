@@ -31,10 +31,12 @@ impl String {
 	}
 
 	fn range(self: &String, start: ui8, end: ui8) -> String {
+		if (start > end) or (end > self.len) {
+			exit(24)
+		}
 		let rtn : &char = malloc(1 + end - start)
 		let offset : &char = self.data[start]
 		memcpy(rtn, offset, end - start)
-		rtn[end - start] = '\0'
 		return new String { data: rtn len: end - start capacity: end - start }
 	}
 
@@ -94,16 +96,22 @@ impl String {
 		while (l < self.len) and (!flag) {
 			if self.data[l].is_whitespace() { l += 1 } else { flag = true }
 		}
-		let r = self.len
+		let r = self.len - 1
+		flag = false
 		while (r > l) and (!flag) {
-			if self.data[r].is_whitespace() { r -= 1 } else { flag = true }
+			if self.data[r].is_whitespace() {
+				r -= 1
+			} else { flag = true }
 		}
+		r += 1
 		let alloc: &char = malloc(r - l + 1)
 		let aux : &char = self.data[l]
+		aux[r - l] = '\0'
 		memcpy(alloc, aux, r - l)
-		self.data = realloc(self.data, r - l + 1)
+		free(self.data)
+		self.data = malloc(r - l + 1)
 		memcpy(self.data, alloc, r - l)
-		self.data[r - l] = '\0'
+		self.data[r-l] = '\0'
 		self.len = r - l
 		self.capacity = self.len
 		return
@@ -111,10 +119,16 @@ impl String {
 
 	fn to_int(self: String) -> i8 {
 		let result : i8 = 0
-		for i in (0..self.len) {
-			result = result * 10 + (self.data[i] - 48)
+		let offset = 0
+		let mul = 1
+		if self.data[0] == '-' {
+			mul = -1
+			offset = 1
 		}
-		return result
+		for i in (offset..self.len) {
+			result = (result * 10) + (self.data[i] - 48)
+		}
+		return (result * mul)
 	}
 
 	fn free(self: &String) {
@@ -125,7 +139,10 @@ impl String {
 	}
 
 	fn fmt(self: &String) -> string {
-		return self.data
+		let aux : &char = malloc(self.len)
+		memcpy(aux, self.data, self.len)
+		aux[self.len] = '\0'
+		return aux
 	}
 
 	fn equals(self: &String, other: &String) -> bool {
@@ -180,7 +197,8 @@ impl String {
 	}
 
 	fn slice(self: &String, start: ui8, end: ui8) -> String {
-		if (end < start) or (start > self.len) or (end > self.len) {
+		if (end < start) or (end > self.len) {
+			printf("Invalid slice range on call for String.slice(). Start: %d | End: %d | Length: %d\n", start, end, self.len)
 			exit(7)
 		}
 		let data : &char = self.data[start]
@@ -235,16 +253,26 @@ impl String {
 
 
 	fn is_numerical(self: &String, is_float: &bool) -> bool {
-		for i in (0..self.len) {
-			let c = self.data[i]
+		let clone = self.clone()
+		clone.trim()
+		let offset = 0
+		if (clone.data[0] == '-') {
+			offset = 1
+		}
+		for i in (offset..clone.len) {
+			let c = clone.data[i]
 			if ^is_float and c == '.' {
+				clone.free()
 				return false
 			}else if c == '.' {
 				^is_float = true
 			}else if c.is_whitespace() or (c < 48) or (c > 58) {
+				printf("Not numerical because char at index %d is %d | %c\n", i, c, c)
+				clone.free()
 				return false
 			}
 		}
+		clone.free()
 		return true
 	}
 }

@@ -1,4 +1,11 @@
 impl i8 {
+	fn abs(self: i8) -> i8 {
+		if self < 0 {
+			return -self
+		}
+		return self
+	}
+
 	fn max(self: i8, other: i8) -> i8 {
 		if self < other {
 			return other
@@ -8,20 +15,34 @@ impl i8 {
 	}
 
 	fn fmt(self: i8) -> string {
-		let copy = self
+		let is_neg = self < 0
+		let copy = self.abs()
 		let len = 1
 		while copy > 9 {
 			copy /= 10
 			len += 1
 		}
 
-		let data : &char = malloc(len+1)
+		if is_neg {
+			len += 1
+		}
+		let data : &char = malloc(len + 1)
+
 		data[len] = '\0'
+		let offset = 0
+		if self < 0 {
+			offset = 1
+		}
+
 		for i in (1..len) {
-			data[len-i] = (self % 10) + 48
+			data[len-i] = (self.abs() % 10) + 48
 			self /= 10
 		}
-		data[0] = self + 48
+		if is_neg {
+			data[0] = '-'
+		}else{
+			data[0] = (self % 10) + 48
+		}
 		return data
 	}
 

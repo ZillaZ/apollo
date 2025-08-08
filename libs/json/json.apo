@@ -186,6 +186,7 @@ impl JsonParser {
 		}else if kind == ValueKind.List {
 			return self.build_list()
 		}else if kind.Err(c) {
+			printf("Error while parsing next value kind. Found token %d\n", c)
 			exit(1)
 			return JsonParserResult.Err(String.from_str("PENIS"))
 		}
@@ -193,10 +194,17 @@ impl JsonParser {
 	}
 
 	fn build_integer(self: &JsonParser) -> JsonParserResult {
-		let end = self.buffer.find(',')
-		let number = self.buffer.range(0, end)
+		let slice = self.buffer.slice(self.offset, self.buffer.len)
+		let next = self.next_char()
+		let offset = slice.find(next)
+		self.offset += offset
+		slice = self.buffer.slice(self.offset, self.buffer.len)
+		let first = slice.first_match(",}", 2)
+		let number = self.capture_until(first.c)
+		let number = number.clone()
+		number.trim()
+		self.offset += first.index
 		let number = number.to_int()
-		self.offset += end + 1
 		return JsonParserResult.Value(JsonValue.Integer(number as i8))
 	}
 
@@ -215,7 +223,7 @@ impl JsonParser {
 				flag = false
 			}else if result.Field(field) {
 				object.push_field(field)
-				let slice = self.buffer.range(self.offset, self.buffer.len)
+				let slice = self.buffer.slice(self.offset, self.buffer.len)
 				let first_match = slice.first_exclusive_match("},", 2)
 				if (first_match.index < 0) {
 					rtn =  JsonParserResult.Err(String.from_str("MUITO SEXO"))
@@ -248,7 +256,7 @@ impl JsonParser {
 		}else if result.Value(value) {
 			list.push(value)
 		}
-		let slice = self.buffer.range(self.offset, self.buffer.len)
+		let slice = self.buffer.slice(self.offset, self.buffer.len)
 		let first_match = slice.first_exclusive_match("],", 2)
 		if (first_match.index < 0) {
 			return JsonParserResult.Err(String.from_str("XERECA"))
@@ -263,7 +271,7 @@ impl JsonParser {
 			}else if result.Value(value) {
 				list.push(value)
 			}
-			slice = self.buffer.range(self.offset, self.buffer.len)
+			slice = self.buffer.slice(self.offset, self.buffer.len)
 			let aux = array(char)[']', ',']
 			first_match = slice.first_exclusive_match("],", 2)
 		}
@@ -274,16 +282,21 @@ impl JsonParser {
 	}
 
 	fn next_value_kind(self: &JsonParser) -> ValueKind {
-		let slice = self.buffer.range(self.offset, self.buffer.len)
-		let first_match = slice.first_match("'\"{[", 4)
+		let slice = self.buffer.slice(self.offset, self.buffer.len)
+		let first_match = slice.first_exclusive_match("'\"{[", 4)
 		if (first_match.index < 0) {
 			let next = self.next_char()
 			if next.is_whitespace() {
 				return ValueKind.Err(next)
 			}
-			let offset = self.buffer.find(next)
+			let offset = slice.find(next)
 			self.offset += offset
-			let number = self.capture_until(',')
+			slice = self.buffer.slice(self.offset, self.buffer.len)
+			let first = slice.first_match(",}", 2)
+			if (first.index < 0) {
+				exit(9)
+			}
+			let number = self.capture_until(first.c)
 			self.offset -= offset
 			let is_float = false
 			if number.is_numerical(&is_float) {
@@ -308,8 +321,9 @@ impl JsonParser {
 
 	fn next_char(self: &JsonParser) -> char {
 		for i in (self.offset..self.buffer.len) {
-			if !i.is_whitespace() {
-				return self.buffer.data[i]
+			let c = self.buffer.data[i]
+			if !c.is_whitespace() {
+				return c
 			}
 		}
 		return '\0'
@@ -319,26 +333,26 @@ impl JsonParser {
 		for i in (self.offset..self.buffer.len) {
 			let c = self.buffer.data[i]
 			if target == c {
-				return self.buffer.range(self.offset, i)
+				return self.buffer.slice(self.offset, i)
 			}
 		}
-		return self.buffer.range(0, 0)
+		return self.buffer.slice(0, 0)
 	}
 
 	fn build_string(self: &JsonParser) -> JsonParserResult {
-		let slice = self.buffer.range(self.offset, self.buffer.len)
+		let slice = self.buffer.slice(self.offset, self.buffer.len)
 		let first_match = slice.first_match("'\"", 2)
 		if (first_match.index < 0) {
 			return JsonParserResult.Err(String.from_str("Couldn' find start string token ('\'' or '\"' were expected)"))
 		}
 		self.offset += first_match.index + 1
-		slice = self.buffer.range(self.offset, self.buffer.len)
+		slice = self.buffer.slice(self.offset, self.buffer.len)
 		let end = slice.find_enclosing(first_match.c)
 		if (end == (-1)) {
 			return JsonParserResult.Err(String.from_str("Couldn' find end of string token ('\'' or '\"' were expected)"))
 		}
 		self.offset += end + 1
-		let value = slice.range(0, end)
+		let value = slice.slice(0, end)
 		return JsonParserResult.Value(JsonValue.String(value.clone()))
 	}
 
@@ -353,7 +367,7 @@ impl JsonParser {
 		}else if field_name.Value(val) {
 			if val.String(field_name) {
 				field.name = field_name
-				let slice = self.buffer.range(self.offset, self.buffer.len)
+				let slice = self.buffer.slice(self.offset, self.buffer.len)
 				let dd = slice.find(':')
 				if (dd < 0) {
 					let error_msg = String.from_str("Failed to retrieve double dot after parsing field name \"")
