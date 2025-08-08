@@ -190,9 +190,7 @@ impl String {
 	}
 
 	fn find_enclosing(self: &String, target: char) -> i8 {
-		let count = 1
 		let escaped = false
-		let sign = 1
 		for i in (0..self.len) {
 			let c = self.data[i]
 			if escaped {
@@ -207,14 +205,11 @@ impl String {
 	}
 
 	fn first_match(self: &String, targets: &char, len: ui8) -> FirstMatch {
-		printf("first match started\n")
-		printf("self is %s\n", self.data)
 		for i in (0..self.len) {
 			let out = self.data[i]
 			for j in (0..len) {
 				let in = targets[j]
 				if in == out {
-					printf("bout to return\n")
 					return new FirstMatch { c: in index: i }
 				}
 			}

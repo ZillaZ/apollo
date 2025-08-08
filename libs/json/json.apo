@@ -195,9 +195,7 @@ impl JsonParser {
 	}
 
 	fn build_value(self: &JsonParser) -> JsonParserResult {
-		printf("start\n")
 		let kind = self.next_value_kind()
-		printf("post kind\n")
 		if kind == ValueKind.Integer {
 			printf("i")
 			return self.build_integer()
@@ -205,7 +203,7 @@ impl JsonParser {
 			printf("f")
 			return self.build_float()
 		}else if kind == ValueKind.String {
-			printf("s")
+			printf("s\n")
 			return self.build_string()
 		}else if kind == ValueKind.Object {
 			printf("o")
@@ -213,10 +211,12 @@ impl JsonParser {
 		}else if kind == ValueKind.List {
 			printf("l")
 			return self.build_list()
-		}else{
+		}else if kind.Err(c) {
+			printf("Found %d\n", c)
 			exit(1)
 			return JsonParserResult.Err(String.from_str("PENIS"))
 		}
+		return JsonParserResult.PartialOk
 	}
 
 	fn build_integer(self: &JsonParser) -> JsonParserResult {
@@ -239,22 +239,16 @@ impl JsonParser {
 			if result.Err(err) {
 				rtn = result
 			}else if result.Field(field) {
-				let result = self.build_value()
-				if result.Err(err) {
-					rtn = result
-				}else if result.Value(value) {
-					field.value = value
-					object.push_field(field)
-					let slice = self.buffer.range(self.offset, self.buffer.len)
-					let aux = array(char)['}', ',']
-					let first_match = slice.first_exclusive_match(aux[0], 2)
-					if (first_match.index < 0) {
-						rtn =  JsonParserResult.Err(String.from_str("MUITO SEXO"))
-					}else if first_match.c == '}' {
-						rtn = JsonParserResult.Value(JsonValue.Object(&object))
-					}else if first_match.c == ',' {
-						self.offset += first_match.index + 1
-					}
+				object.push_field(field)
+				let slice = self.buffer.range(self.offset, self.buffer.len)
+				let aux = array(char)['}', ',']
+				let first_match = slice.first_exclusive_match(aux[0], 2)
+				if (first_match.index < 0) {
+					rtn =  JsonParserResult.Err(String.from_str("MUITO SEXO"))
+				}else if first_match.c == '}' {
+					rtn = JsonParserResult.Value(JsonValue.Object(&object))
+				}else if first_match.c == ',' {
+					self.offset += first_match.index + 1
 				}
 			}else{
 				rtn = JsonParserResult.Err(String.from_str("Unexpected result coming from build field (at build object)"))
@@ -305,11 +299,7 @@ impl JsonParser {
 
 	fn next_value_kind(self: &JsonParser) -> ValueKind {
 		let slice = self.buffer.range(self.offset, self.buffer.len)
-		let aux = array(char)['\'', '\"', '{', '[']
-		let ptr : &char = aux[0]
-		printf("seraq e cast\n")
 		let first_match = slice.first_match("'\"{[", 4)
-		printf("its cast\n")
 		if (first_match.index < 0) {
 			let next = self.next_char()
 			if next.is_whitespace() {
@@ -336,7 +326,7 @@ impl JsonParser {
 		}else if c == '[' {
 			return ValueKind.List
 		}else{
-			return ValueKind.Err(' ')
+			return ValueKind.Err('\0')
 		}
 	}
 
@@ -346,7 +336,7 @@ impl JsonParser {
 				return self.buffer.data[i]
 			}
 		}
-		return ' '
+		return '\0'
 	}
 
 	fn capture_until(self: &JsonParser, target: char) -> String {
@@ -361,27 +351,32 @@ impl JsonParser {
 
 	fn build_string(self: &JsonParser) -> JsonParserResult {
 		let slice = self.buffer.range(self.offset, self.buffer.len)
-		let aux = array(char)['\'', '\"']
-		let first_match = slice.first_match(aux[0], 2)
+		printf("STRING: %s\n", slice.data)
+		let first_match = slice.first_match("'\"", 2)
 		if (first_match.index < 0) {
 			return JsonParserResult.Err(String.from_str("Couldn' find start string token ('\'' or '\"' were expected)"))
 		}
-		self.offset += first_match.index
+		self.offset += first_match.index + 1
 		slice = self.buffer.range(self.offset, self.buffer.len)
 		let end = slice.find_enclosing(first_match.c)
 		if (end == (-1)) {
 			return JsonParserResult.Err(String.from_str("Couldn' find end of string token ('\'' or '\"' were expected)"))
 		}
 		self.offset += end + 1
-		return JsonParserResult.Value(JsonValue.String(slice.range(0, end)))
+		let value = slice.range(0, end)
+		printf("STRING OK: %s\n", value.data)
+		return JsonParserResult.Value(JsonValue.String(value.clone()))
 	}
 
 	fn build_field(self: &JsonParser) -> JsonParserResult {
 		let field_name = self.build_string()
+		let aux : JsonField
+		let field : &JsonField = malloc(size_of(aux))
+		^field = JsonField.new()
 		if field_name.Value(val) {
 			if val.String(field_name) {
-				let ptr : &JsonField = self.field_ptr
-				ptr.name = field_name
+				printf("field: %s\n", field_name.data)
+				field.name = field_name
 				let slice = self.buffer.range(self.offset, self.buffer.len)
 				let dd = slice.find(':')
 				if (dd < 0) {
@@ -391,7 +386,11 @@ impl JsonParser {
 					return JsonParserResult.Err(error_msg)
 				}
 				self.offset += dd + 1
-				return JsonParserResult.Field(ptr)
+				let result = self.build_value()
+				if result.Value(val) {
+					field.value = val
+					return JsonParserResult.Field(field)
+				}
 			}
 		}
 		return JsonParserResult.PartialOk
@@ -405,9 +404,9 @@ impl JsonParser {
 		}
 		self.offset = first_match.index + 1
 		if first_match.c == '[' {
-			self.next_token = NextToken.Field
-		}else {
 			self.next_token = NextToken.Value
+		}else {
+			self.next_token = NextToken.Field
 		}
 		return JsonParserResult.PartialOk
 	}

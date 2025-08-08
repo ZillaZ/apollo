@@ -674,25 +674,14 @@ impl<'a> GccContext<'a> {
                 self.inherit_tail_expr(&block, &loop_block, memory);
                 let condition_block = function.new_block(self.uuid());
                 condition_block.end_with_conditional(None, condition, continue_block, loop_block);
-                let tail_expr = Expr::Overloaded(Overloaded {
-                    lhs: structs::OverloadedLHS::Name(Name {
-                        op: None,
-                        op_count: 0,
-                        name: fl.pivot.clone(),
-                    }),
-                    op: OverloadedOp::Add,
-                    rhs: Value::non_heap(ValueEnum::Int(1)),
-                });
-                let entry = memory
-                    .block_tail_expr
-                    .entry(loop_block)
-                    .or_insert(Vec::new());
-                entry.push(tail_expr);
+                let iter_block = function.new_block(self.uuid());
+                iter_block.add_assignment_op(None, pivot, BinaryOp::Plus, self.context.new_rvalue_from_int(pivot.to_rvalue().get_type(), 1));
+                iter_block.end_with_jump(None, condition_block);
                 memory.blocks.insert(condition_block, true);
                 block.end_with_jump(None, condition_block);
                 self.parse_block(&mut fl.block, &mut loop_block, memory, ast);
                 memory.blocks.insert(loop_block, true);
-                loop_block.end_with_jump(None, condition_block);
+                loop_block.end_with_jump(None, iter_block);
                 *block = continue_block;
             }
             GccValues::L(value) => {
