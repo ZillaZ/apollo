@@ -197,7 +197,7 @@ impl String {
 				escaped = false
 			}else if (c == '\\') {
                 escaped = true
-            }else if target == c {
+            }else if (target == c) {
 				return i
 			}
 		}

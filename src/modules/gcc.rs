@@ -1884,7 +1884,7 @@ impl<'a> GccContext<'a> {
             let vars = memory.variables.get(&memory.function_scope).unwrap();
             let var = vars.get(&enum_match.name).expect(&format!("Var {} not in scope", enum_match.name));
             let enum_type = var.to_rvalue().get_type().is_struct().expect(&format!("Not a struct {}", enum_match.name));
-            let variants = memory.enum_variants.get(&enum_type.as_type()).unwrap();
+            let variants = memory.enum_variants.get(&enum_type.as_type()).expect(&format!("Type {:?} is not a enum since it has no variants", enum_type));
             let (index, field) = variants.get(&enum_match.variant).expect(&format!("Enum variant {} does not exist", enum_match.variant));
             let kind_field = enum_type.get_field(0);
             let variant_field = enum_type.get_field(1);

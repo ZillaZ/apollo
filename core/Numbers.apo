@@ -6,6 +6,29 @@ impl i8 {
 			return self
 		}
 	}
+
+	fn fmt(self: i8) -> string {
+		let copy = self
+		let len = 1
+		while copy > 9 {
+			copy /= 10
+			len += 1
+		}
+
+		let data : &char = malloc(len+1)
+		data[len] = '\0'
+		for i in (1..len) {
+			data[len-i] = (self % 10) + 48
+			self /= 10
+		}
+		data[0] = self + 48
+		return data
+	}
+
+	fn to_string(self: i8) -> String {
+		let data = self.fmt()
+		return String.from_str(data)
+	}
 }
 
 impl i4 {

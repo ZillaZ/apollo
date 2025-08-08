@@ -15,6 +15,13 @@ fn favicon(request: Request) -> Response {
 
 let file = File.open("package.json")
 let json = file.read()
-printf("BEFORE: %s\n", json.data)
 let parser = JsonParser.new(json)
-parser.parse()
+let result = parser.parse()
+if result.Err(err) {
+	printf("Error while parsing json: %s\n", err.data)
+	exit(1)
+}else if result.Value(val) {
+	let object = val.as_object()
+	let name = object.get("name")
+	printf("Name is %s\n", name.fmt())
+}
