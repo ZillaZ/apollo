@@ -5,7 +5,7 @@ use std::any::Any;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::ops::DerefMut;
-use std::rc::Rc;
+use std::rc::{self, Rc};
 use std::sync::Arc;
 
 use super::ast_context::AstContext;
@@ -247,9 +247,6 @@ impl<'a> GccContext<'a> {
         for expr in ast.expressions.clone().iter_mut() {
             let reference = &mut *memory;
             match expr {
-                Expr::Return(ref mut rtn) => {
-                    self.build_return(rtn, block, reference, ast);
-                }
                 Expr::Call(ref mut call) => {
                     let result = self.parse_call(call, None, block, reference, ast).rvalue();
                     block.add_eval(None, result);
@@ -843,6 +840,7 @@ impl<'a> GccContext<'a> {
     fn compile_program(&'a self, is_debug: bool, out: String) {
         self.context.dump_to_file(format!("{out}.c"), false);
         if is_debug {
+            self.context.set_debug_info(true);
             self.context
                 .set_optimization_level(gccjit::OptimizationLevel::None);
         } else {
@@ -1161,17 +1159,6 @@ impl<'a> GccContext<'a> {
         memory: &mut Memory<'a>,
         ast: &mut Ast,
     ) {
-        if let Some(ref tail_expr) = memory.block_tail_expr.get(block) {
-            let mut ast = Ast {
-                namespace: ast.namespace.clone(),
-                expressions: tail_expr.to_vec(),
-                imports: HashMap::new(),
-                context: ast.context.clone(),
-                core_context: ast.core_context.clone(),
-            };
-            self.parse_expression(&mut ast, memory, block);
-            memory.block_tail_expr.remove_entry(&block);
-        }
         if let Some(ref mut value) = rtn.value {
             let mut value = self.parse_value(value, block, memory, ast).rvalue();
             let function_return_type = block.get_function().get_return_type();
@@ -1636,18 +1623,6 @@ impl<'a> GccContext<'a> {
                 self.context
                     .new_rvalue_from_int(<i32 as Typeable>::get_type(&self.context), 0),
             );
-        } else {
-            if let Some(ref tail_expr) = memory.block_tail_expr.get(new_block) {
-                let mut ast = Ast {
-                    namespace: ast.namespace.clone(),
-                    expressions: tail_expr.to_vec(),
-                    imports: HashMap::new(),
-                    context: ast.context.clone(),
-                    core_context: ast.core_context.clone(),
-                };
-                self.parse_expression(&mut ast, memory, new_block);
-                memory.block_tail_expr.remove_entry(&new_block);
-            }
         }
         GccValues::Nil
     }
@@ -1899,8 +1874,8 @@ impl<'a> GccContext<'a> {
         };
         let function = block.get_function();
         let mut then_block = function.new_block(format!("if_{}", self.uuid()));
-        let mut else_block = function.new_block(self.uuid());
-        block.end_with_conditional(None, condition, then_block, else_block);
+        let mut continue_block = function.new_block(format!("continue_{}", self.uuid()));
+        block.end_with_conditional(None, condition, then_block, continue_block);
         let mut ast_block = self.get_rc_value(&mut ast_if.block).unwrap();
         if let Some((ref name, (value, index, field))) = tb_declared {
             let value = if let Some(field) = field {
@@ -1914,32 +1889,27 @@ impl<'a> GccContext<'a> {
             then_block.add_assignment(None, local, value.to_rvalue());
         }
         self.parse_block(&mut ast_block, &mut then_block, memory, ast);
-        let mut else_should_continue = false;
-        self.inherit_tail_expr(&block, &else_block, memory);
         if let Some(ref mut otherwise) = ast_if.otherwise {
             let mut otherwise = self.get_rc_value(otherwise).unwrap();
+            let mut else_block = function.new_block(format!("else_{}", self.uuid()));
+            continue_block.end_with_jump(None, else_block);
             match otherwise {
                 Otherwise::Block(ref mut block) => {
-                    else_should_continue = block.box_return.is_none();
                     self.parse_block(block, &mut else_block, memory, ast);
+                    if block.box_return.is_none() {
+                        continue_block = function.new_block(format!("else_wo_ret_{}", self.uuid()));
+                        else_block.end_with_jump(None, continue_block);
+                    }
                 }
                 Otherwise::If(ref mut ast_if) => {
-                    else_block = self.parse_if(ast_if, &mut else_block, memory, ast);
+                    continue_block = self.parse_if(ast_if, &mut else_block, memory, ast);
                 }
             }
         };
-        let ast_block = self.get_rc_value(&mut ast_if.block).unwrap();
-        let else_block = if else_should_continue {
-            let new = function.new_block(self.uuid());
-            else_block.end_with_jump(None, new);
-            new
-        } else {
-            else_block
-        };
         if ast_block.box_return.is_none() {
-            then_block.end_with_jump(None, else_block);
+            then_block.end_with_jump(None, continue_block);
         }
-        else_block
+        continue_block
     }
 
     fn parse_declaration(

@@ -21,6 +21,7 @@ enum JsonValue {
 	String(String)
 	Object(&JsonObject)
 	List(&JsonList)
+	Boolean(bool)
 	Nil
 }
 
@@ -46,6 +47,8 @@ impl JsonValue {
 			return obj.fmt()
 		}else if self.String(text) {
 			return text.fmt()
+		}else if self.List(list) {
+			return list.fmt()
 		}else if self.Nil {
 			return "(null)"
 		}else{
@@ -133,6 +136,24 @@ impl JsonList {
 		return
 	}
 
+	fn fmt(self: &JsonList) -> string {
+		let buffer = String.from_str("[")
+		for i in (0..(self.len-1)) {
+			let element = self.elements[i]
+			let fmt = element.fmt()
+			buffer.push_str(fmt, 999999)
+			free(fmt)
+			buffer.push_char(',')
+		}
+		if self.len > 0 {
+			let fmt = self.elements[self.len-1].fmt()
+			buffer.push_str(fmt, 999999)
+			free(fmt)
+		}
+		buffer.push_char(']')
+		return buffer.data
+	}
+
 	fn free(self: &JsonList) {
 		free(self.elements)
 		self.len = 0
@@ -173,24 +194,22 @@ impl JsonParser {
 		return result
 	}
 
-	fn build_value(self: &JsonParser) -> JsonParserResult {
-		let kind = self.next_value_kind()
-		if kind == ValueKind.Integer {
-			return self.build_integer()
-		}else if kind == ValueKind.Float {
-			return self.build_float()
-		}else if kind == ValueKind.String {
-			return self.build_string()
-		}else if kind == ValueKind.Object {
-			return self.build_object()
-		}else if kind == ValueKind.List {
-			return self.build_list()
-		}else if kind.Err(c) {
-			printf("Error while parsing next value kind. Found token %d\n", c)
-			exit(1)
-			return JsonParserResult.Err(String.from_str("PENIS"))
+	fn build_boolean(self: &JsonParser) -> JsonParserResult {
+		let slice = self.buffer.slice(self.offset, self.buffer.len)
+		let next = self.next_char()
+		let offset = slice.find(next)
+		self.offset += offset
+		slice = self.buffer.slice(self.offset, self.buffer.len)
+		let first = slice.first_match(",}]", 3)
+		let number = self.capture_until(first.c)
+		self.offset += first.index
+		if number.eq_str("true") {
+			return JsonParserResult.Value(JsonValue.Boolean(true))
+		}else if number.eq_str("false") {
+			return JsonParserResult.Value(JsonValue.Boolean(false))
+		}else{
+			return JsonParserResult.Err(String.from_str("Not a boolean"))
 		}
-		return JsonParserResult.PartialOk
 	}
 
 	fn build_integer(self: &JsonParser) -> JsonParserResult {
@@ -199,7 +218,7 @@ impl JsonParser {
 		let offset = slice.find(next)
 		self.offset += offset
 		slice = self.buffer.slice(self.offset, self.buffer.len)
-		let first = slice.first_match(",}", 2)
+		let first = slice.first_match(",}]", 3)
 		let number = self.capture_until(first.c)
 		let number = number.clone()
 		number.trim()
@@ -247,16 +266,19 @@ impl JsonParser {
 		let list : &JsonList = malloc(size_of(aux))
 		^list = JsonList.new()
 		let next = self.next_char()
-		if next == ']' {
-			return JsonParserResult.Value(JsonValue.List(list))
+		if next != '[' {
+			exit(2)
 		}
+		let slice = self.buffer.slice(self.offset, self.buffer.len)
+		let offset = slice.find(next)
+		self.offset += offset + 1
 		let result = self.build_value()
 		if result.Err(err) {
 			return result
 		}else if result.Value(value) {
 			list.push(value)
 		}
-		let slice = self.buffer.slice(self.offset, self.buffer.len)
+		slice = self.buffer.slice(self.offset, self.buffer.len)
 		let first_match = slice.first_exclusive_match("],", 2)
 		if (first_match.index < 0) {
 			return JsonParserResult.Err(String.from_str("XERECA"))
@@ -265,6 +287,7 @@ impl JsonParser {
 			return JsonParserResult.Value(JsonValue.List(list))
 		}
 		while (first_match.index >= 0) and (first_match.c == ',') {
+			self.offset += first_match.index + 1
 			let result = self.build_value()
 			if result.Err(err) {
 				return result
@@ -272,27 +295,27 @@ impl JsonParser {
 				list.push(value)
 			}
 			slice = self.buffer.slice(self.offset, self.buffer.len)
-			let aux = array(char)[']', ',']
 			first_match = slice.first_exclusive_match("],", 2)
 		}
 		if (first_match.index < 0) {
 			return JsonParserResult.Err(String.from_str("XERECA"))
 		}
+		self.offset += first_match.index + 1
 		return JsonParserResult.Value(JsonValue.List(list))
 	}
 
-	fn next_value_kind(self: &JsonParser) -> ValueKind {
+	fn build_value(self: &JsonParser) -> JsonParserResult {
 		let slice = self.buffer.slice(self.offset, self.buffer.len)
 		let first_match = slice.first_exclusive_match("'\"{[", 4)
 		if (first_match.index < 0) {
 			let next = self.next_char()
 			if next.is_whitespace() {
-				return ValueKind.Err(next)
+				return JsonParserResult.Err(String.from_str("potz next tem porra nenhumakkkk"))
 			}
 			let offset = slice.find(next)
 			self.offset += offset
 			slice = self.buffer.slice(self.offset, self.buffer.len)
-			let first = slice.first_match(",}", 2)
+			let first = slice.first_match(",}]", 3)
 			if (first.index < 0) {
 				exit(9)
 			}
@@ -301,21 +324,21 @@ impl JsonParser {
 			let is_float = false
 			if number.is_numerical(&is_float) {
 				if !is_float {
-					return ValueKind.Integer
+					return self.build_integer()
 				}
-				return ValueKind.Float
+				return self.build_float()
 			}
-			return ValueKind.Err(next)
+			return self.build_boolean()
 		}
 		let c = first_match.c
 		if (c == '\'') or (c == '\"') {
-			return ValueKind.String
+			return self.build_string()
 		}else if c == '{' {
-			return ValueKind.Object
+			return self.build_object()
 		}else if c == '[' {
-			return ValueKind.List
+			return self.build_list()
 		}else{
-			return ValueKind.Err('\0')
+			return JsonParserResult.Err(String.from_str("olha la meu nobregakkkkk"))
 		}
 	}
 

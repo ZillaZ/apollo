@@ -1,0 +1,13 @@
+fn test() -> i4 {
+	if true {
+		if false {
+			return 3
+		}else{
+			return 4
+		}
+	}else{
+		return 2
+	}
+}
+
+printf("%d\n", test())

@@ -1,5 +1,9 @@
 {
 	"name": "Lucas",
     "age": 20,
-    "neg": -123
+    "neg": -123,
+    "list": [1, 2, 3, "sk", ["a", "b", "c"], 4, -5],
+    "object": {
+        "nested": "aloukk"
+    }
 }

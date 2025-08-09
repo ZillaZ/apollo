@@ -13,7 +13,11 @@ if result.Err(err) {
 	let name = object.get("name")
 	let age = object.get("age")
 	let neg = object.get("neg")
+	let list = object.get("list")
+	let object = object.get("object").as_object()
 	printf("Name is %s\n", name.fmt())
 	printf("Age is %s\n", age.fmt())
 	printf("Neg is %s\n", neg.fmt())
+	printf("List is %s\n", list.fmt())
+	printf("Object is %s\n", object.get("nested").fmt())
 }
