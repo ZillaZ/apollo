@@ -19,5 +19,6 @@ if result.Err(err) {
 	printf("Age is %s\n", age.fmt())
 	printf("Neg is %s\n", neg.fmt())
 	printf("List is %s\n", list.fmt())
-	printf("Object is %s\n", object.get("nested").fmt())
+	printf("Nested object is %s\n", object.get("nested").fmt())
+	printf("Float is %s\n", object.get("float").fmt())
 }

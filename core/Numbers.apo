@@ -75,3 +75,13 @@ impl i4 {
 		return (self == ' ') or (self == '\n') or (self == '\r') or (self == '\t')
 	}
 }
+
+extern fn snprintf(buffer: &char, max: ui8, format:string, val: f8) -> string{}
+
+impl f8 {
+	fn fmt(self: f8) -> string {
+		let buffer : &char = malloc(100)
+		snprintf(buffer, 100, "%f", self)
+		return buffer
+	}
+}

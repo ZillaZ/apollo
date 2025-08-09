@@ -17,7 +17,7 @@ impl JsonParserResult {
 
 enum JsonValue {
 	Integer(i8)
-	Float(f4)
+	Float(f8)
 	String(String)
 	Object(&JsonObject)
 	List(&JsonList)
@@ -51,6 +51,8 @@ impl JsonValue {
 			return list.fmt()
 		}else if self.Nil {
 			return "(null)"
+		}else if self.Float(float) {
+			return float.fmt()
 		}else{
 			return "not implemented yet"
 		}
@@ -220,7 +222,7 @@ impl JsonParser {
 		slice = self.buffer.slice(self.offset, self.buffer.len)
 		let first = slice.first_match(",}]", 3)
 		let number = self.capture_until(first.c)
-		let number = number.clone()
+		number = number.clone()
 		number.trim()
 		self.offset += first.index
 		let number = number.to_int()
@@ -228,7 +230,18 @@ impl JsonParser {
 	}
 
 	fn build_float(self: &JsonParser) -> JsonParserResult {
-		return JsonParserResult.Err(String.from_str("Not implemented yet"))
+		let slice = self.buffer.slice(self.offset, self.buffer.len)
+		let next = self.next_char()
+		let offset = slice.find(next)
+		self.offset += offset
+		slice = self.buffer.slice(self.offset, self.buffer.len)
+		let first = slice.first_match(",}]", 3)
+		let number = self.capture_until(first.c)
+		self.offset += first.index
+		number = number.clone()
+		number.trim()
+		let number = number.to_float()
+		return JsonParserResult.Value(JsonValue.Float(number))
 	}
 
 	fn build_object(self: &JsonParser) -> JsonParserResult {

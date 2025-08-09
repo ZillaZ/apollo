@@ -14,6 +14,8 @@ len: ui8
 capacity: ui8
 }
 
+extern fn atof(s:string)->f8{}
+
 impl String {
 	fn new() -> String {
 		let capacity : ui8 = 128
@@ -129,6 +131,13 @@ impl String {
 			result = (result * 10) + (self.data[i] - 48)
 		}
 		return (result * mul)
+	}
+
+	fn to_float(self: String) -> f8 {
+		let data = self.fmt()
+		let result = atof(data)
+		free(data)
+		return result
 	}
 
 	fn free(self: &String) {

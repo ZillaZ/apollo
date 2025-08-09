@@ -4,6 +4,7 @@
     "neg": -123,
     "list": [1, 2, 3, "sk", ["a", "b", "c"], 4, -5],
     "object": {
-        "nested": "aloukk"
+        "nested": "aloukk",
+        "float": 2.5
     }
 }
